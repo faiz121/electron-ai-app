@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Text Processor</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: transparent;
+        }
+        #search-container {
+            display: flex;
+            align-items: flex-start;
+            background-color: #40414f;
+            border-radius: 20px;
+            padding: 10px;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+            max-height: 150px; /* Adjust this value to show about 5-6 lines */
+            overflow: hidden;
+        }
+        #mode-select {
+            background: none;
+            border: none;
+            color: #c5c5d2;
+            font-size: 18px;
+            cursor: pointer;
+            padding: 5px 10px;
+            margin-right: 5px;
+        }
+        #search-input {
+            flex-grow: 1;
+            border: none;
+            background-color: transparent;
+            color: white;
+            font-size: 14px;
+            outline: none;
+            resize: none;
+            overflow-y: auto;
+            max-height: 130px; /* Slightly less than container to account for padding */
+            line-height: 1.5;
+            padding: 5px;
+        }
+        #submit-button {
+            background: none;
+            border: none;
+            color: #c5c5d2;
+            font-size: 18px;
+            cursor: pointer;
+            padding: 5px 10px;
+            align-self: flex-end;
+        }
+    </style>
+</head>
+<body>
+    <div id="search-container">
+        <select id="mode-select">
+            <option value="summarize">↧</option>
+            <option value="email">✉</option>
+            <option value="qa">❓</option>
+        </select>
+        <textarea id="search-input" rows="1" placeholder="Send a message..."></textarea>
+        <button id="submit-button">➤</button>
+    </div>
+    <script src="popup.js"></script>
+</body>
+</html>
