@@ -2,6 +2,7 @@ const { app, BrowserWindow, ipcMain, globalShortcut, Tray, Menu, nativeImage } =
 const path = require('path');
 const fs = require('fs');
 const OpenAI = require('openai');
+const marked = require('marked').marked
 require('dotenv').config();
 
 let mainWindow;
@@ -154,10 +155,43 @@ async function processWithOpenAI(text, systemPrompt) {
   }
 }
 
-// Example of a custom processor (not used, just for demonstration)
 async function customProcessor(text, mode) {
-  // Implement your custom logic here
-  return `Custom processed (${mode}): ${text}`;
+  console.log('text-------', text)
+  let prompt = '';
+
+  switch (mode) {
+    case 'summarize':
+      prompt = `Please summarize the following in clear, professional, and concise English. Avoid providing explanations about what was changed. For example, instead of saying, "I made these changes to improve clarity," simply provide the updated version.\n\n${text}`;
+      break;
+    case 'email':
+      prompt = `Please rewrite the following in clear, professional, and concise English. Avoid providing explanations about what was changed. For example, instead of saying, "I made these changes to improve clarity," simply provide the updated version.\n\n${text}`;
+      break;
+    case 'qa':
+      prompt = `Please answer the following question in clear, professional, and concise English. Avoid providing long and unnecessary explanations. Keep it to the point. Return the response like this {"response": "answer" }\n\n${text}`;
+      break;
+    default:
+      prompt = text; // Use the text as is if mode is not recognized
+  }
+
+  try {
+    const response = await askQuestion_llm_helper(text, prompt); // Assuming you want to use the same context
+    if(mode === 'qa') return response.response
+    return response;
+  } catch (error) {
+    console.error('Error processing text with custom processor:', error);
+    throw new Error(`Failed to process text: ${error.message}`);
+  }
+}
+async function getChatTitle(text) {
+  const prompt = `Please provide a concise title for this text in no more than 5 words, answer exactly with what is asked and do not add any additional details to the response:\n\n${text}`;
+
+  try {
+    const title = await askQuestion_llm_helper(text, prompt);
+    return title.trim(); // Trim any extra spaces
+  } catch (error) {
+    console.error('Error getting chat title:', error);
+    return 'New Chat'; // Default title if error occurs
+  }
 }
 
 function createNewChat() {
@@ -166,7 +200,7 @@ function createNewChat() {
       title: `Chat ${chats.length + 1}`,
       messages: []
   };
-  chats.push(newChat);
+  chats.unshift(newChat);
   currentChatId = newChat.id;
   saveChats();
   return newChat;
@@ -273,12 +307,20 @@ ipcMain.on('process-text', async (event, { text, mode, chatId }) => {
     mainWindow.webContents.send('add-user-message', { text, mode });
 
     try {
-      const processor = textProcessors[mode] || textProcessors.qa;
-      const processedText = await processor(text);
-      
-      chat.messages.push({ text: processedText, sender: 'ai', mode });
+      // const processor = textProcessors[mode] || textProcessors.qa;
+      const processedText = await customProcessor(text, mode); // Use customProcessor directly
+      const renderedText = marked(processedText)
+      const chat = chats.find(c => c.id === chatId);
+      if (chat) {
+        const chatTitle = await getChatTitle(text);
+        chat.title = chatTitle;
+        saveChats();
+        mainWindow.webContents.send('chat-title-updated', { chatId, title: chatTitle });
+      }
+
+      chat.messages.push({ text: renderedText, sender: 'ai', mode });
       saveChats();
-      mainWindow.webContents.send('update-conversation', { originalText: text, processedText, mode, chatId });
+      mainWindow.webContents.send('update-conversation', { originalText: text, renderedText, mode, chatId });
   } catch (error) {
       console.error('Error processing text:', error);
       mainWindow.webContents.send('processing-error', error.message || 'An error occurred while processing the text');

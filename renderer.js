@@ -4,7 +4,7 @@ const searchInput = document.getElementById('search-input');
 const submitButton = document.getElementById('submit-button');
 const modeSelect = document.getElementById('mode-select');
 const conversationArea = document.getElementById('conversation-area');
-const loadingIndicator = document.getElementById('loading');
+const loadingIndicator = document.querySelector('.loading-dots');
 const closeButton = document.getElementById('close-button');
 const newChatBtn = document.getElementById('new-chat-btn');
 const chatList = document.getElementById('chat-list');
@@ -45,22 +45,27 @@ closeButton.addEventListener('click', () => {
 });
 
 function processText(text, mode) {
-  addMessageToConversation(text, 'user', mode);
-  showLoadingIndicator();
+  console.log('process-text in renderer')
+  // addMessageToConversation(text, 'user', mode);
+  
   ipcRenderer.send('process-text', { text, mode, chatId: currentChatId });
 }
 
 ipcRenderer.on('add-user-message', (event, { text, mode }) => {
+  console.log('add-user-message')
     addMessageToConversation(text, 'user', mode);
+    showLoadingIndicator();
 });
 
-ipcRenderer.on('update-conversation', (event, { originalText, processedText, mode, chatId }) => {
+ipcRenderer.on('update-conversation', (event, { originalText, renderedText, mode, chatId }) => {
   hideLoadingIndicator();
-  addMessageToConversation(processedText, 'ai', mode);
+  console.log('update-conversation')
+  addMessageToConversation(renderedText, 'ai', mode);
   updateChatList();
 });
 
 function addMessageToConversation(text, sender, mode) {
+  console.log('addMessageToConversation was called with', text)
   const messageElement = document.createElement('div');
   messageElement.classList.add('message', sender === 'user' ? 'user-message' : 'ai-message');
   
@@ -81,12 +86,12 @@ function addMessageToConversation(text, sender, mode) {
               modeText = 'Summary';
               break;
           case 'qa':
-              modeText = 'Answer';
+              modeText = 'Response';
               break;
           default:
               modeText = 'Response';
       }
-      contentElement.innerHTML = `<strong>${modeText}:</strong><br>${text}`;
+      contentElement.innerHTML = text;
   } else {
       contentElement.textContent = text;
   }
@@ -125,6 +130,7 @@ function hideLoadingIndicator() {
 }
 
 ipcRenderer.on('show-loading', () => {
+  const loadingIndicator = conversationArea.querySelector('.loading-indicator');
     loadingIndicator.style.display = 'block';
 });
 
