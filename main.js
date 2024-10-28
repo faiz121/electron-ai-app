@@ -1,9 +1,12 @@
-const { app, BrowserWindow, ipcMain, globalShortcut, Tray, Menu, nativeImage } = require('electron');
+require('dotenv').config();
+const { app, BrowserWindow, ipcMain, globalShortcut, Tray, Menu, nativeImage, shell } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const OpenAI = require('openai');
 const marked = require('marked').marked
-require('dotenv').config();
+const qdrantService = require('./qdrantService');
+const fsPromise = require('fs').promises;
+const pdf = require('pdf-parse');
 
 let mainWindow;
 let tray;
@@ -26,52 +29,64 @@ function createNewChat() {
 }
 
 function createWindow() {
-    mainWindow = new BrowserWindow({
-        width: 800,
-        height: 600,
-        frame: false,
-        webPreferences: {
-            nodeIntegration: true,
-            contextIsolation: false,
-            preload: path.join(__dirname, 'preload.js')
-        },
-        backgroundColor: '#202123',
-        show: false
-    });
+  mainWindow = new BrowserWindow({
+      width: 800,
+      height: 600,
+      frame: false,
+      webPreferences: {
+          nodeIntegration: false,  // Changed to false
+          contextIsolation: true,  // Changed to true
+          preload: path.join(__dirname, 'preload.js')
+      },
+      backgroundColor: '#202123',
+      show: false
+  });
 
-    mainWindow.loadFile('index.html');
+  mainWindow.loadFile('index.html');
 
-    mainWindow.on('close', (event) => {
-        if (!app.isQuitting) {
-            event.preventDefault();
-            mainWindow.hide();
-        }
-    });
+  mainWindow.on('close', (event) => {
+      if (!app.isQuitting) {
+          event.preventDefault();
+          mainWindow.hide();
+      }
+  });
 }
 
 function createPopupWindow() {
   if (popupWindow) {
-      return;
+    return;
   }
+  
   popupWindow = new BrowserWindow({
-      width: 600,
-      height: 60,
-      frame: false,
-      show: false,
-      alwaysOnTop: true,
-      webPreferences: {
-          nodeIntegration: true,
-          contextIsolation: false,
-          preload: path.join(__dirname, 'preload.js')
-      },
-      transparent: true,
-      backgroundColor: '#00000000'
+    width: 600,
+    height: 60,
+    frame: false,
+    show: false,
+    alwaysOnTop: true,
+    webPreferences: {
+      nodeIntegration: false,
+      contextIsolation: true,
+      preload: path.join(__dirname, 'preload.js')
+    },
+    transparent: true,
+    backgroundColor: '#00000000',
+    hasShadow: true,
+    vibrancy: 'ultra-dark', // For macOS
+    visualEffectState: 'active', // For Windows
+    roundedCorners: true
   });
 
   popupWindow.loadFile('popup.html');
 
+  // Add class to body when window loads
+  popupWindow.webContents.on('did-finish-load', () => {
+    popupWindow.webContents.executeJavaScript(`
+      document.body.classList.add('popup');
+    `);
+  });
+
   popupWindow.on('blur', () => {
-      popupWindow.hide();
+    popupWindow.hide();
   });
 }
 
@@ -121,15 +136,35 @@ function getPopupPosition() {
 }
 
 
+// Replace the existing textProcessors object with this updated version
 const textProcessors = {
   summarize: async (text) => {
-      return processWithOpenAI(text, "Please summarize the following text:");
+    return processWithOpenAI(text, "Please summarize the following text:");
   },
   email: async (text) => {
-      return processWithOpenAI(text, "Please rewrite the following email to improve its clarity and professionalism:");
+    return processWithOpenAI(text, "Please rewrite the following email to improve its clarity and professionalism:");
   },
   qa: async (text) => {
-      return processWithOpenAI(text, "Please answer the following question or respond to the statement:");
+    return processWithOpenAI(text, "Please answer the following question or respond to the statement:");
+  },
+  search: async (text) => {
+    await qdrantService.initialize();
+    const results = await qdrantService.searchSimilarDocuments(text);
+    
+    if (results.length === 0) {
+      return JSON.stringify({ results: [] });
+    }
+
+    // The results already contain properly formatted content from qdrantService
+    return JSON.stringify({
+      results: results.map(result => ({
+        filename: result.filename,
+        directory: result.directory,
+        path: result.path,
+        relevantContent: result.relevantContent, // This now contains the properly extracted context
+        score: result.score
+      }))
+    });
   }
 };
 
@@ -186,7 +221,7 @@ async function getChatTitle(text) {
   const prompt = `Please provide a concise title for this text in no more than 5 words, answer exactly with what is asked and do not add any additional details to the response:\n\n${text}`;
 
   try {
-    const title = await askQuestion_llm_helper(text, prompt);
+    const title = await processWithOpenAI(text, prompt);
     return title.trim(); // Trim any extra spaces
   } catch (error) {
     console.error('Error getting chat title:', error);
@@ -233,7 +268,13 @@ function deleteChat(chatId) {
 }
 
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
+  try {
+    await qdrantService.initialize();
+    console.log('Qdrant service initialized');
+} catch (error) {
+    console.error('Failed to initialize Qdrant:', error);
+}
   loadChats();
   if (chats.length === 0) {
       createNewChat();
@@ -289,41 +330,55 @@ ipcMain.on('load-chat', (event, chatId) => {
 
 
 ipcMain.on('process-text', async (event, { text, mode, chatId }) => {
-    if (popupWindow) {
-        popupWindow.hide();
-    }
-    mainWindow.show();
-    mainWindow.focus();
-    mainWindow.webContents.send('show-loading');
-    
+  if (popupWindow) {
+    popupWindow.hide();
+  }
+  mainWindow.show();
+  mainWindow.focus();
+  
+  try {
     if (!chatId || !chats.find(c => c.id === chatId)) {
-        const newChat = createNewChat();
-        chatId = newChat.id;
-        mainWindow.webContents.send('chat-loaded', newChat);
+      const newChat = createNewChat();
+      chatId = newChat.id;
+      mainWindow.webContents.send('chat-loaded', newChat);
     }
 
     const chat = chats.find(c => c.id === chatId);
     chat.messages.push({ text, sender: 'user', mode });
     mainWindow.webContents.send('add-user-message', { text, mode });
 
-    try {
-      // const processor = textProcessors[mode] || textProcessors.qa;
-      const processedText = await customProcessor(text, mode); // Use customProcessor directly
-      const renderedText = marked(processedText)
-      const chat = chats.find(c => c.id === chatId);
-      if (chat) {
-        const chatTitle = await getChatTitle(text);
-        chat.title = chatTitle;
-        saveChats();
-        mainWindow.webContents.send('chat-title-updated', { chatId, title: chatTitle });
-      }
+    // Use the appropriate text processor
+    const processor = textProcessors[mode] || textProcessors.qa;
+    const processedText = await processor(text);
 
-      chat.messages.push({ text: renderedText, sender: 'ai', mode });
+    // Log the results for debugging
+    if (mode === 'search') {
+      console.log('Search results:', JSON.parse(processedText));
+    }
+
+    if (chat) {
+      const chatTitle = await getChatTitle(text);
+      chat.title = chatTitle;
       saveChats();
-      mainWindow.webContents.send('update-conversation', { originalText: text, renderedText, mode, chatId });
+      mainWindow.webContents.send('chat-title-updated', { chatId, title: chatTitle });
+    }
+
+    chat.messages.push({ 
+      text: processedText, 
+      sender: 'ai', 
+      mode 
+    });
+    saveChats();
+    
+    mainWindow.webContents.send('update-conversation', { 
+      originalText: text, 
+      renderedText: processedText, 
+      mode, 
+      chatId 
+    });
   } catch (error) {
-      console.error('Error processing text:', error);
-      mainWindow.webContents.send('processing-error', error.message || 'An error occurred while processing the text');
+    console.error('Error processing text:', error);
+    mainWindow.webContents.send('processing-error', error.message || 'An error occurred while processing the text');
   }
 });
 
@@ -360,4 +415,89 @@ ipcMain.on('hide-main-window', () => {
 ipcMain.on('show-main-window', () => {
   mainWindow.show();
   mainWindow.focus();
+});
+
+// Add these IPC handlers after your existing ones
+ipcMain.handle('index-documents-directory', async (event) => {
+  try {
+      await qdrantService.initialize();
+      const documentsPath = '/Users/mohammedfaizulislam/Documents/vectordocs'
+      const updateStatus = (status) => {
+          mainWindow.webContents.send('indexing-status', status);
+      };
+      
+      const results = await qdrantService.indexDocumentsDirectory(documentsPath, updateStatus);
+      return {
+          success: true,
+          results
+      };
+  } catch (error) {
+      console.error('Error indexing documents:', error);
+      return {
+          success: false,
+          error: error.message
+      };
+  }
+});
+
+ipcMain.handle('show-item-in-folder', async (event, filePath) => {
+  try {
+    // Show the file in file explorer/finder
+    await shell.showItemInFolder(filePath);
+    return true;
+  } catch (error) {
+    console.error('Error showing file:', error);
+    throw error;
+  }
+});
+
+async function reindexFile(filePath) {
+  try {
+      console.log(`Reindexing file: ${filePath}`);
+      await qdrantService.processFile(filePath, (status) => console.log(status));
+      console.log('Reindexing complete');
+      return true;
+  } catch (error) {
+      console.error('Reindexing failed:', error);
+      return false;
+  }
+}
+
+// Add IPC handler for reindexing
+ipcMain.handle('reindex-file', async (event, filePath) => {
+  return await reindexFile(filePath);
+});
+
+
+// Add this IPC handler
+ipcMain.handle('get-file-preview', async (event, filePath) => {
+  try {
+    const extension = path.extname(filePath).toLowerCase();
+    
+    // Handle different file types
+    switch (extension) {
+      case '.pdf':
+        const buffer = await fsPromise.readFile(filePath);
+        const pdfData = await pdf(buffer);
+        return pdfData.text;
+        
+      case '.txt':
+      case '.md':
+      case '.json':
+      case '.js':
+      case '.jsx':
+      case '.ts':
+      case '.tsx':
+      case '.css':
+      case '.html':
+        const content = await fsPromise.readFile(filePath, 'utf-8');
+        return content;
+        
+      default:
+        throw new Error('File type not supported for preview');
+    }
+  } catch (error) {
+    console.error('Error getting file preview:', error);
+    throw error;
+  }
 });

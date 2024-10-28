@@ -1,0 +1,268 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer components {
+  /* Base styles */
+  body {
+    @apply bg-gray-900 text-gray-100;
+  }
+
+  /* Sidebar styles */
+  #sidebar {
+    @apply fixed left-0 top-0 h-full w-64 bg-gray-850 border-r border-gray-700 p-4 flex flex-col transform -translate-x-full transition-transform duration-300 ease-in-out;
+    z-index: 50;
+  }
+
+  #sidebar.open {
+    @apply translate-x-0;
+  }
+
+  #new-chat-btn {
+    @apply bg-gray-700 hover:bg-gray-600 text-white px-4 py-2 rounded-lg mb-4 transition-colors;
+  }
+
+  .chat-item {
+    @apply flex items-center justify-between p-2 rounded-lg hover:bg-gray-750 cursor-pointer text-gray-300;
+  }
+
+  .chat-item.active {
+    @apply bg-gray-750;
+  }
+
+  /* Remove group from @apply and use direct CSS */
+  .chat-item .delete-chat {
+    @apply opacity-0 hover:text-red-500 transition-opacity;
+  }
+  
+  .chat-item:hover .delete-chat {
+    @apply opacity-100;
+  }
+
+  /* Main content styles */
+  #main-content {
+    @apply ml-0 h-screen flex flex-col transition-all duration-300 ease-in-out;
+  }
+
+  #main-content.sidebar-open {
+    @apply ml-64;
+  }
+
+  #top-bar {
+    @apply bg-gray-850 p-4 flex justify-between items-center border-b border-gray-700;
+  }
+
+  /* Close button styles */
+  #close-button {
+    @apply text-4xl font-light hover:bg-gray-700 rounded-lg w-8 h-8 flex items-center justify-center transition-all duration-200;
+  }
+
+  #close-button:hover {
+    @apply bg-gray-700 transform scale-105;
+  }
+
+  /* Conversation area styles */
+  #conversation-area {
+    @apply flex-1 overflow-y-auto p-4;
+  }
+  
+  #conversation-area > * + * {
+    @apply mt-4;
+  }
+
+  /* Message styles */
+  .message {
+    @apply hover:opacity-100 transition-opacity;
+    opacity: 0.95;  
+  }
+
+  .message + .message {
+    @apply mt-2;
+  }
+  
+  .user-message {
+    @apply flex justify-end;
+  }
+  
+  .user-message .message-icon {
+    @apply order-2;
+  }
+
+  .user-message .message-content {
+    @apply bg-blue-600 text-white rounded-2xl rounded-tr-sm px-4 py-2 max-w-[80%];
+  }
+
+.ai-message {
+  @apply flex justify-start;
+}
+
+.ai-message .message-content {
+  @apply bg-gray-700 text-white rounded-2xl rounded-tl-sm px-4 py-2 max-w-[80%];
+}
+
+.message-icon {
+  @apply flex-shrink-0 w-8 h-8;
+}
+
+.message-icon svg {
+  @apply w-8 h-8 text-gray-400;
+}
+
+
+.message-content {
+  @apply text-sm;
+}
+
+.ai-message .message-content .search-result {
+  @apply max-w-full w-full;
+}
+
+  /* Input area styles */
+  #input-area {
+    @apply p-4 bg-gray-850 border-t border-gray-700;
+  }
+
+  #search-container {
+    @apply flex items-center gap-2;
+  }
+
+  #search-input {
+    @apply flex-1 bg-gray-700 text-white rounded-lg p-2 resize-none outline-none focus:ring-2 focus:ring-blue-500 caret-blue-500;
+  }
+
+  #mode-select {
+    @apply bg-gray-700 text-white rounded-lg p-2 hover:bg-gray-600 transition-colors cursor-pointer outline-none;
+  }
+
+  #submit-button {
+    @apply bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg transition-colors;
+  }
+
+  /* Search Results Styling */
+  .search-result {
+    @apply w-full;
+  }
+
+  .search-result-header {
+    @apply flex items-center justify-between;
+  }
+
+  .filename-container {
+    @apply flex-1;
+  }
+
+  .filename {
+    @apply text-blue-400 font-medium text-lg hover:text-blue-300;
+  }
+
+  .match-score {
+    @apply text-gray-400 text-sm ml-2;
+  }
+
+  .directory-info {
+    @apply flex items-center text-gray-400 text-xs mb-3;
+  }
+
+  .content-label {
+    @apply text-emerald-400 text-sm font-medium mr-2;
+  }
+
+  .content-text {
+    @apply text-gray-300 text-sm;
+  }
+
+  /* Loading Animation */
+  .loading-indicator {
+    @apply flex items-start gap-4 w-full;
+  }
+
+  .loading-indicator .message-icon {
+    @apply flex-shrink-0 w-8 h-8;
+  }
+
+  .loading-indicator.hiding {
+    animation: fadeOut 0.3s ease-in-out;
+  }
+
+  .loading-dots {
+    @apply bg-gray-700 rounded-2xl rounded-tl-sm px-4 py-2 flex gap-1;
+  }
+
+  .loading-dots span {
+    @apply w-2 h-2 bg-blue-400 rounded-full;
+    animation: bounce 0.6s infinite;
+  }
+
+  .loading-dots span:nth-child(2) {
+    animation-delay: 0.2s;
+  }
+
+  .loading-dots span:nth-child(3) {
+    animation-delay: 0.4s;
+  }
+
+  /* Popup styles */
+  .popup-window {
+    @apply bg-transparent;
+  }
+
+  body.popup {
+    @apply bg-transparent;
+  }
+
+  .popup #search-container {
+    @apply flex items-center gap-2 bg-gray-800/95 p-3 rounded-lg border border-gray-700 shadow-lg;
+  }
+
+  .popup #mode-select {
+    @apply bg-gray-700 text-white rounded-lg p-2 hover:bg-gray-600 transition-colors cursor-pointer outline-none;
+  }
+
+  .popup #search-input {
+    @apply flex-1 bg-gray-700 text-white rounded-lg p-2 resize-none outline-none 
+           focus:ring-2 focus:ring-blue-500 caret-blue-500 placeholder-gray-400
+           text-sm leading-tight min-h-[36px];
+  }
+
+  .popup #submit-button {
+    @apply bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg 
+           transition-colors flex items-center justify-center min-w-[40px];
+  }
+
+  .popup #submit-button:hover {
+    @apply transform scale-105;
+  }
+
+  .popup #submit-button:active {
+    @apply transform scale-95;
+  }
+}
+
+/* Animations */
+@keyframes bounce {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-4px); }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes fadeOut {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+/* Scrollbar styles */
+::-webkit-scrollbar {
+  @apply w-2;
+}
+
+::-webkit-scrollbar-track {
+  @apply bg-gray-800;
+}
+
+::-webkit-scrollbar-thumb {
+  @apply bg-gray-600 rounded hover:bg-gray-500;
+}
