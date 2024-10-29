@@ -41,17 +41,48 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-  // Create and add Index Documents button
-  const indexDocsButton = document.createElement('button');
-  indexDocsButton.textContent = 'Index Documents';
-  indexDocsButton.classList.add('action-button');
-  document.querySelector('#sidebar').insertBefore(indexDocsButton, chatList);
+  const indexDocsContainer = document.createElement('div');
+indexDocsContainer.className = 'index-docs-container';
+indexDocsContainer.innerHTML = `
+  <button class="action-button" id="indexDocsBtn">
+    <span class="button-text">Index Documents</span>
+  </button>
+  <div class="index-status" style="display: none;">
+    <div class="status-text"></div>
+    <div class="indexed-path"></div>
+    <div class="last-indexed-info"></div>
+  </div>
+`;
+document.querySelector('#sidebar').insertBefore(indexDocsContainer, chatList);
+
+const indexBtn = document.getElementById('indexDocsBtn');
+const statusText = indexDocsContainer.querySelector('.status-text');
+const indexedPath = indexDocsContainer.querySelector('.indexed-path');
+const statusContainer = indexDocsContainer.querySelector('.index-status');
+const lastIndexedInfo = indexDocsContainer.querySelector('.last-indexed-info');
 
   // Add search option to mode select
   const searchOption = document.createElement('option');
   searchOption.value = 'search';
   searchOption.textContent = '🔍';
   modeSelect.appendChild(searchOption);
+
+  // Check for last indexed directory on startup
+async function checkLastIndexedDirectory() {
+  try {
+    const lastPath = await window.electronAPI.getLastIndexedDirectory();
+    if (lastPath) {
+      statusContainer.style.display = 'block';
+      lastIndexedInfo.innerHTML = `
+        <div class="last-indexed-header">Last Indexed Directory:</div>
+        <div class="last-indexed-path">${lastPath}</div>
+      `;
+    }
+  } catch (error) {
+    console.error('Error getting last indexed directory:', error);
+  }
+}
+
 
   // Functions
   function adjustTextareaHeight() {
@@ -204,28 +235,49 @@ document.addEventListener('DOMContentLoaded', () => {
     localStorage.setItem('sidebarOpen', sidebar.classList.contains('open'));
   });
 
-  indexDocsButton.addEventListener('click', async () => {
+  indexBtn.addEventListener('click', async () => {
     try {
-      indexDocsButton.disabled = true;
-      indexDocsButton.textContent = 'Indexing...';
-
+      indexBtn.disabled = true;
+      indexBtn.querySelector('.button-text').textContent = 'Selecting Directory...';
+      
       const result = await window.electronAPI.indexDocumentsDirectory();
-
+      
+      if (result.canceled) {
+        console.log('Directory selection canceled');
+        return;
+      }
+  
       if (result.success) {
-        addMessageToConversation(
-          `Successfully indexed ${result.results.success.length} documents.\n` +
-          `Failed to index ${result.results.failed.length} documents.`,
-          'ai',
-          'system'
-        );
+        statusContainer.style.display = 'block';
+        const successCount = result.results.success.length;
+        const failCount = result.results.failed.length;
+        
+        let message = `Successfully indexed ${successCount} document${successCount !== 1 ? 's' : ''}.`;
+        if (failCount > 0) {
+          message += ` Failed to index ${failCount} document${failCount !== 1 ? 's' : ''}.`;
+        }
+        
+        addMessageToConversation(message, 'ai', 'system');
+        
+        if (result.path) {
+          lastIndexedInfo.innerHTML = `
+            <div class="last-indexed-header">Current Directory:</div>
+            <div class="last-indexed-path">${result.path}</div>
+          `;
+        }
       } else {
+        statusContainer.style.display = 'block';
+        statusText.textContent = `Failed to index documents: ${result.error}`;
         addMessageToConversation(`Failed to index documents: ${result.error}`, 'ai', 'error');
       }
     } catch (error) {
+      console.error('Error during indexing:', error);
+      statusContainer.style.display = 'block';
+      statusText.textContent = `Error: ${error.message}`;
       addMessageToConversation(`Error indexing documents: ${error.message}`, 'ai', 'error');
     } finally {
-      indexDocsButton.disabled = false;
-      indexDocsButton.textContent = 'Index Documents';
+      indexBtn.disabled = false;
+      indexBtn.querySelector('.button-text').textContent = 'Index Documents';
     }
   });
 
@@ -322,20 +374,16 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   window.electronAPI.onIndexingStatus((status) => {
-    const statusElement = document.getElementById('indexingStatus') ||
-      (() => {
-        const el = document.createElement('div');
-        el.id = 'indexingStatus';
-        el.classList.add('status-message');
-        document.body.appendChild(el);
-        return el;
-      })();
-
-    statusElement.textContent = status;
-    statusElement.style.display = status ? 'block' : 'none';
+    if (status) {
+      statusContainer.style.display = 'block';
+      statusText.textContent = status;
+    } else {
+      statusText.textContent = '';
+    }
   });
 
   // Initial setup
   updateChatList();
   searchInput.focus();
+  checkLastIndexedDirectory();
 });

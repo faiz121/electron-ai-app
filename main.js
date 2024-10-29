@@ -1,5 +1,5 @@
 import 'dotenv/config';
-import { app, screen, BrowserWindow, ipcMain, globalShortcut, Tray, Menu, nativeImage, shell } from 'electron';
+import { app, screen, BrowserWindow, ipcMain, globalShortcut, Tray, Menu, nativeImage, shell, dialog } from 'electron';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import fs from 'fs';
@@ -7,12 +7,19 @@ import { marked } from 'marked';
 import qdrantService from './qdrantService.js';
 import { promises as fsPromise } from 'fs';
 import pdf from 'pdf-parse';
+import Store from 'electron-store';
 
 // Get the current file's directory
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 console.log('__dirname', __dirname)
+
+const store = new Store({
+  defaults: {
+    lastIndexedDirectory: null
+  }
+});
 
 let mainWindow;
 let tray;
@@ -27,6 +34,7 @@ function createWindow() {
       width: 800,
       height: 600,
       frame: false,
+      titleBarStyle: 'hidden', // This hides the title bar but keeps the window controls on macOS
       webPreferences: {
           nodeIntegration: false,
           contextIsolation: true,
@@ -336,27 +344,27 @@ function deleteChat(chatId) {
 
 app.whenReady().then(async () => {
   try {
-    await qdrantService.initialize();
-    console.log('Qdrant service initialized');
-} catch (error) {
-    console.error('Failed to initialize Qdrant:', error);
-}
-  loadChats();
-  if (chats.length === 0) {
+    await handleStartup();
+    loadChats();
+    if (chats.length === 0) {
       createNewChat();
-  }
-  currentChatId = chats[0].id;
-  createWindow();
-  createPopupWindow();
-  createTray();
+    }
+    currentChatId = chats[0].id;
+    createWindow();
+    createPopupWindow();
+    createTray();
 
-  globalShortcut.register('CommandOrControl+Shift+A', togglePopup);
+    globalShortcut.register('CommandOrControl+Shift+A', togglePopup);
 
-  app.on('activate', function () {
+    app.on('activate', function () {
       if (BrowserWindow.getAllWindows().length === 0) createWindow();
-  });
+    });
+  } catch (error) {
+    console.error('Failed to initialize app:', error);
+    app.quit();
+  }
 }).catch(error => {
-  console.error('Failed to initialize app:', error);
+  console.error('Failed to start app:', error);
   app.quit();
 });
 
@@ -485,27 +493,54 @@ ipcMain.on('show-main-window', () => {
   mainWindow.focus();
 });
 
-// Add these IPC handlers after your existing ones
 ipcMain.handle('index-documents-directory', async (event) => {
   try {
-      await qdrantService.initialize();
-      const documentsPath = '/Users/faimohammed/Documents/vectordocs'
-      const updateStatus = (status) => {
-          mainWindow.webContents.send('indexing-status', status);
-      };
-      
-      const results = await qdrantService.indexDocumentsDirectory(documentsPath, updateStatus);
+    await qdrantService.initialize();
+    
+    // Show directory selection dialog
+    const result = await dialog.showOpenDialog(mainWindow, {
+      properties: ['openDirectory'],
+      title: 'Select Directory to Index',
+      buttonLabel: 'Index This Folder',
+      message: 'Choose a folder containing the documents you want to index'
+    });
+
+    if (result.canceled) {
       return {
-          success: true,
-          results
+        success: false,
+        canceled: true
       };
+    }
+
+    const documentsPath = result.filePaths[0];
+    console.log('Selected directory:', documentsPath);
+
+    const updateStatus = (status) => {
+      mainWindow.webContents.send('indexing-status', status);
+    };
+    
+    const results = await qdrantService.indexDocumentsDirectory(documentsPath, updateStatus);
+    
+    // Store the last indexed directory
+    store.set('lastIndexedDirectory', documentsPath);
+    
+    return {
+      success: true,
+      results,
+      path: documentsPath
+    };
   } catch (error) {
-      console.error('Error indexing documents:', error);
-      return {
-          success: false,
-          error: error.message
-      };
+    console.error('Error indexing documents:', error);
+    return {
+      success: false,
+      error: error.message
+    };
   }
+});
+
+// Add handler to get last indexed directory
+ipcMain.handle('get-last-indexed-directory', () => {
+  return store.get('lastIndexedDirectory');
 });
 
 ipcMain.handle('show-item-in-folder', async (event, filePath) => {
@@ -569,3 +604,36 @@ ipcMain.handle('get-file-preview', async (event, filePath) => {
     throw error;
   }
 });
+
+ipcMain.handle('get-collection-status', async () => {
+  try {
+    const needsIndexing = await qdrantService.needsIndexing();
+    const collectionInfo = await qdrantService.client.getCollection(qdrantService.collectionName);
+    return {
+      needsIndexing,
+      pointsCount: collectionInfo.points_count,
+      indexedVectorsCount: collectionInfo.indexed_vectors_count
+    };
+  } catch (error) {
+    console.error('Error getting collection status:', error);
+    return { error: error.message };
+  }
+});
+
+// Add this method to the main.js file to handle startup
+async function handleStartup() {
+  try {
+    await qdrantService.initialize();
+    
+    // Check if documents need to be indexed
+    const needsIndexing = await qdrantService.needsIndexing();
+    if (needsIndexing) {
+      console.log('Documents need to be indexed on startup');
+      // You could optionally auto-index here:
+      // const documentsPath = '/Users/mohammedfaizulislam/Documents/vectordocs';
+      // await qdrantService.indexDocumentsDirectory(documentsPath);
+    }
+  } catch (error) {
+    console.error('Error during startup:', error);
+  }
+}

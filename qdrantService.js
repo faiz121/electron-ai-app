@@ -7,6 +7,15 @@ import XLSX from 'xlsx';
 import { parse as csvParse } from 'csv-parse/sync'; // Fixed CSV parse import
 import crypto from 'crypto';
 
+// Helper function to sanitize text for search
+  function sanitizeText(text) {
+    return text
+      .replace(/[^\w\s]/g, ' ')  // Replace special chars with space
+      .replace(/\s+/g, ' ')      // Normalize whitespace
+      .trim()                    // Trim ends
+      .toLowerCase();            // Convert to lowercase
+  }
+
 class QdrantService {
   constructor() {
     this.client = new QdrantClient({
@@ -76,36 +85,18 @@ class QdrantService {
 
   async processNaturalLanguageQuery(query) {
     try {
-      const prompt = `You are a precise search query analyzer. Extract explicitly mentioned names and keywords from this query.
-      
+      const prompt = `You are a precise search query analyzer. Extract important search terms from this query.
+        
   Query: "${query}"
   
   Return ONLY a JSON object with this exact structure:
   {
-    "names": ["any person names mentioned"],
-    "keywords": ["specific terms or phrases to search for"],
+    "terms": ["specific words or phrases to search for"],
     "requireAll": boolean (whether all terms must match)
   }
   
-  Examples:
-  
-  Query: "find documents about machine learning or AI written by John Smith"
-  {
-    "names": ["John Smith"],
-    "keywords": ["machine learning", "AI"],
-    "requireAll": false
-  }
-  
-  Query: "show me emails from Sarah containing project updates and budget"
-  {
-    "names": ["Sarah"],
-    "keywords": ["project updates", "budget"],
-    "requireAll": true
-  }
-  
   Extract ONLY explicitly mentioned terms. Do not infer or expand terms.
-  Use 'requireAll: true' when terms are connected by 'and', false for 'or'.
-  Default to false if conjunction is not specified.`;
+  Use 'requireAll: true' when terms are connected by 'and', false for 'or'.`;
   
       const result = await this.askQuestion_llm_helper(query, prompt);
       
@@ -116,37 +107,36 @@ class QdrantService {
           searchCriteria = result;
         } else {
           // If it's a string, try to parse it
-          // First try to find a JSON object within the string if it exists
           const jsonMatch = result.match(/\{[\s\S]*\}/);
           const jsonStr = jsonMatch ? jsonMatch[0] : result;
           searchCriteria = JSON.parse(jsonStr);
         }
+  
+        // Handle both old and new response formats
+        const terms = [
+          ...(searchCriteria.terms || []),
+          ...(searchCriteria.names || []),
+          ...(searchCriteria.keywords || [])
+        ].filter(Boolean);
+  
+        return {
+          terms,
+          requireAll: Boolean(searchCriteria.requireAll)
+        };
+  
       } catch (parseError) {
         console.error('Error parsing LLM response:', parseError);
-        // Fallback to a default structure
+        // Fallback to using the raw query
         return {
-          names: [],
-          keywords: [query],
+          terms: [query],
           requireAll: false
         };
       }
   
-      // Validate and clean the response
-      const cleanedCriteria = {
-        names: Array.isArray(searchCriteria.names) ? searchCriteria.names.filter(Boolean) : [],
-        keywords: Array.isArray(searchCriteria.keywords) ? searchCriteria.keywords.filter(Boolean) : [],
-        requireAll: Boolean(searchCriteria.requireAll)
-      };
-  
-      console.log('Extracted search criteria:', cleanedCriteria);
-      return cleanedCriteria;
-  
     } catch (error) {
-      console.error('Error in natural language query processing:', error);
-      // Return a default structure in case of error
+      console.error('Error in query processing:', error);
       return {
-        names: [],
-        keywords: [query], // Use the raw query as a keyword
+        terms: [query],
         requireAll: false
       };
     }
@@ -155,18 +145,38 @@ class QdrantService {
   async getEmbedding(text) {
     try {
       await this.initializeEmbedder();
-
+      
+      // Trim and clean the text
+      const cleanedText = text.trim().replace(/\s+/g, ' ');
+      
       // Get embeddings
-      const output = await this.embedder(text, {
+      const output = await this.embedder(cleanedText, {
         pooling: 'mean',
         normalize: true
       });
-
-      // Convert to array format that Qdrant expects
+  
+      // Convert to array and verify
       const embedding = Array.from(output.data);
+      
+      if (!embedding || embedding.length !== 384) {
+        throw new Error(`Invalid embedding generated: length=${embedding?.length}`);
+      }
+  
+      // Verify the embedding contains valid numbers
+      if (!embedding.every(num => typeof num === 'number' && !isNaN(num))) {
+        throw new Error('Embedding contains invalid numbers');
+      }
+  
+      console.log('Generated valid embedding:', {
+        dimensions: embedding.length,
+        hasSomeNonZero: embedding.some(x => x !== 0),
+        min: Math.min(...embedding),
+        max: Math.max(...embedding)
+      });
+  
       return embedding;
     } catch (error) {
-      console.error('Error getting embedding:', error);
+      console.error('Error generating embedding:', error);
       throw error;
     }
   }
@@ -174,45 +184,78 @@ class QdrantService {
 
   async initialize() {
     if (this.initialized) return;
-
+  
     try {
       await this.initializeEmbedder();
-
-      // Add retry logic for Docker startup
+      console.log('Embedder initialized');
+  
       let retries = 5;
       while (retries > 0) {
         try {
+          // Check if collection exists
           const collections = await this.client.getCollections();
           const collectionExists = collections.collections.some(
             collection => collection.name === this.collectionName
           );
-
+  
           if (!collectionExists) {
+            console.log('Creating new collection...');
+            // Create new collection with optimized settings
             await this.client.createCollection(this.collectionName, {
               vectors: {
-                size: 384, // MiniLM-L6-v2 produces 384-dimensional embeddings
+                size: 384,
                 distance: "Cosine"
-              }
+              },
+              optimizers_config: {
+                default_segment_number: 1,
+                indexing_threshold: 0,
+                memmap_threshold: 0
+              },
+              on_disk_payload: true
             });
-            console.log('Created new Qdrant collection');
+  
+            // Verify collection
+            const collectionInfo = await this.client.getCollection(this.collectionName);
+            console.log('Collection created:', collectionInfo);
           } else {
-            console.log('Using existing Qdrant collection');
+            console.log('Using existing collection');
+            
+            // Check if collection is empty
+            const collectionInfo = await this.client.getCollection(this.collectionName);
+            console.log('Collection info:', collectionInfo);
+            
+            if (collectionInfo.points_count === 0) {
+              console.log('Collection is empty, documents need to be indexed');
+            } else {
+              console.log(`Collection contains ${collectionInfo.points_count} documents`);
+            }
           }
-
+  
           this.initialized = true;
           break;
         } catch (error) {
-          console.log(`Retrying connection to Qdrant (${retries} attempts left)...`);
+          console.error('Error during initialization:', error);
           retries--;
           if (retries === 0) throw error;
           await new Promise(resolve => setTimeout(resolve, 2000));
         }
       }
     } catch (error) {
-      console.error('Failed to initialize Qdrant service:', error);
+      console.error('Failed to initialize:', error);
       throw error;
     }
   }
+
+  async needsIndexing() {
+    try {
+      const collectionInfo = await this.client.getCollection(this.collectionName);
+      return collectionInfo.points_count === 0;
+    } catch (error) {
+      console.error('Error checking if indexing needed:', error);
+      return true;
+    }
+  }
+  
 
   // async getEmbedding(text) {
   //   try {
@@ -284,33 +327,21 @@ class QdrantService {
     const extension = path.extname(filePath).toLowerCase();
     const fileName = path.basename(filePath);
     let content = '';
-    let metadata = {};
-
+  
     try {
+      console.log(`\n=== Processing file: ${fileName} ===`);
       updateStatus && updateStatus(`Processing ${fileName}...`);
-      console.log(`Processing file: ${fileName}`);
-
+  
+      // Read file content based on type
       switch (extension) {
         case '.pdf':
-          console.log('Reading PDF file...');
           const dataBuffer = await fs.readFile(filePath);
-          console.log('PDF file read, size:', dataBuffer.length);
           const pdfContent = await this.extractPDFContent(dataBuffer);
           content = pdfContent.text;
-          metadata = pdfContent.metadata;
-          console.log('PDF processing completed');
-          break;
-        case '.xlsx':
-        case '.xls':
-          const workbook = XLSX.readFile(filePath);
-          content = workbook.SheetNames.map(sheetName => {
-            const worksheet = workbook.Sheets[sheetName];
-            return XLSX.utils.sheet_to_txt(worksheet);
-          }).join('\n');
           break;
         case '.csv':
           const csvContent = await fs.readFile(filePath, 'utf-8');
-          const records = csvParse(csvContent); // Using the imported csvParse
+          const records = csvParse(csvContent);
           content = records.map(record => record.join(' ')).join('\n');
           break;
         case '.txt':
@@ -320,39 +351,74 @@ class QdrantService {
         default:
           throw new Error(`Unsupported file type: ${extension}`);
       }
-
-      if (!content || content.trim().length === 0) {
-        throw new Error('No content could be extracted from file');
+  
+      content = content.trim();
+      if (!content) {
+        throw new Error('No content extracted from file');
       }
-
-      console.log(`Content extracted from ${fileName}, length: ${content.length}`);
-      updateStatus && updateStatus(`Generating embedding for ${fileName}...`);
-
+  
+      // Log content preview for verification
+      console.log(`Content length: ${content.length} characters`);
+      console.log('Content preview:', content.substring(0, 100));
+  
+      // Generate embedding with content verification
+      console.log('Generating embedding...');
       const embedding = await this.getEmbedding(content);
+      
+      // Verify embedding
+      const embeddingStats = {
+        dimensions: embedding.length,
+        hasSomeNonZero: embedding.some(x => x !== 0),
+        min: Math.min(...embedding),
+        max: Math.max(...embedding),
+        mean: embedding.reduce((a, b) => a + b, 0) / embedding.length
+      };
+      console.log('Embedding stats:', embeddingStats);
+  
+      // Create point with full content
       const pointId = this.generateUUID(fileName);
-
+      const point = {
+        id: pointId,
+        vector: embedding,
+        payload: {
+          path: filePath,
+          content: content,
+          filename: fileName,
+          filetype: extension,
+          indexed_at: new Date().toISOString()
+        }
+      };
+  
+      // Upsert with wait and verification
+      console.log('Upserting point to Qdrant...');
       await this.client.upsert(this.collectionName, {
         wait: true,
-        points: [{
-          id: pointId,
-          vector: embedding,
-          payload: {
-            path: filePath,  // Ensure this is always set
-            content: content,
-            filename: fileName,
-            filetype: extension,
-            metadata: metadata,
-            indexed_at: new Date().toISOString()
-          }
-        }]
+        points: [point]
       });
-
+  
+      // Verify point storage
+      const stored = await this.client.retrieve(this.collectionName, {
+        ids: [pointId],
+        with_payload: true,
+        with_vector: true
+      });
+  
+      if (!stored.length || !stored[0].vector || !stored[0].payload?.content) {
+        throw new Error('Point verification failed - data not stored properly');
+      }
+  
+      console.log('Storage verification:', {
+        hasVector: Boolean(stored[0].vector),
+        vectorLength: stored[0].vector.length,
+        contentLength: stored[0].payload.content.length,
+        payloadSize: JSON.stringify(stored[0].payload).length
+      });
+  
       return true;
     } catch (error) {
-      console.error(`Error processing file ${filePath}:`, error);
+      console.error(`Error processing file ${fileName}:`, error);
       throw error;
     }
-
   }
 
   async extractRelevantContext(content, searchTerms) {
@@ -418,110 +484,83 @@ class QdrantService {
       const searchCriteria = await this.processNaturalLanguageQuery(query);
       console.log('Search criteria:', searchCriteria);
   
-      const searchTerms = [
-        ...searchCriteria.doctors,
-        ...searchCriteria.medicalTerms,
-        ...searchCriteria.conditions
-      ];
+      if (!searchCriteria.terms || searchCriteria.terms.length === 0) {
+        console.log('No search terms provided');
+        return [];
+      }
   
-      const queryEmbedding = await this.getEmbedding(searchTerms.join(" "));
+      // Get all points
+      const allPoints = await this.client.scroll(this.collectionName, {
+        limit: 100,
+        with_payload: true,
+        with_vector: true,
+        offset: 0  // Start from beginning
+      }, {});  // Empty filter to get all documents
   
-      const searchResults = await this.client.search(this.collectionName, {
-        vector: queryEmbedding,
-        limit: limit * 2,
-        with_payload: true
+      console.log('Retrieved points:', {
+        total: allPoints.points.length,
+        hasPayload: allPoints.points.some(p => p.payload),
+        sample: allPoints.points[0]?.payload ? 'has payload' : 'no payload'
       });
   
-      // Extract relevant content with context for each result
-      const processedResults = await Promise.all(searchResults
-        .filter(result => result.score > 0.3)
-        .map(async result => {
-          if (!result.payload?.content) return null;
-          
-          const contentLines = result.payload.content.split('\n');
+      if (!allPoints.points.length) {
+        console.log('No documents found in collection');
+        return [];
+      }
+  
+      const results = allPoints.points
+        .filter(point => point.payload?.content)
+        .map(point => {
+          const content = point.payload.content;
           const matches = [];
-          
-          // Find line numbers containing matches
-          contentLines.forEach((line, lineNum) => {
-            const lineLower = line.toLowerCase();
-            
-            // Check for doctor names
-            searchCriteria.doctors.forEach(doctor => {
-              const variations = [
-                doctor.toLowerCase(),
-                `dr. ${doctor.toLowerCase()}`,
-                `dr ${doctor.toLowerCase()}`,
-                `doctor ${doctor.toLowerCase()}`
-              ];
-              if (variations.some(v => lineLower.includes(v))) {
-                matches.push({ line: lineNum, term: doctor });
-              }
-            });
-            
-            // Check for medical terms
-            searchCriteria.medicalTerms.forEach(term => {
-              if (lineLower.includes(term.toLowerCase())) {
-                matches.push({ line: lineNum, term });
-              }
-            });
-          });
   
-          if (matches.length === 0) return null;
-  
-          // Extract context for each match
-          const contexts = [];
-          matches.forEach(match => {
-            const startLine = Math.max(0, match.line - 1);
-            const endLine = Math.min(contentLines.length - 1, match.line + 1);
+          // Search for each term
+          searchCriteria.terms.forEach(term => {
+            const regex = new RegExp(term, 'gi');
+            let match;
             
-            // Get context lines
-            const contextLines = contentLines.slice(startLine, endLine + 1);
-            let context = contextLines.join('\n');
-  
-            // Highlight matched terms
-            searchTerms.forEach(term => {
-              const variations = term.toLowerCase().includes('dr.') || 
-                               term.toLowerCase().includes('doctor') ?
-                [term] :
-                [term, `Dr. ${term}`, `Dr ${term}`, `Doctor ${term}`];
-              
-              variations.forEach(variant => {
-                const regex = new RegExp(`(${variant})`, 'gi');
-                context = context.replace(regex, '**$1**');
+            while ((match = regex.exec(content)) !== null) {
+              const start = Math.max(0, match.index - 50);
+              const end = Math.min(content.length, match.index + term.length + 50);
+              matches.push({
+                term,
+                context: content.substring(start, end),
+                position: match.index
               });
-            });
-  
-            contexts.push({
-              context,
-              lineNumber: match.line
-            });
+            }
           });
   
-          // Remove duplicate contexts and sort by line number
-          const uniqueContexts = [...new Set(contexts.map(c => c.context))];
-          const formattedText = uniqueContexts.slice(0, 3).join('\n[...]\n');
+          // If no matches, return null
+          if (matches.length === 0) {
+            return null;
+          }
+  
+          // Calculate score based on number of matches and positions
+          const score = matches.length / searchCriteria.terms.length;
+  
+          console.log(`Found ${matches.length} matches in ${point.payload.filename}`);
   
           return {
-            filename: path.basename(result.payload.path || ''),
-            directory: path.basename(path.dirname(result.payload.path || '')),
-            path: result.payload.path,
+            filename: path.basename(point.payload.path),
+            directory: path.dirname(point.payload.path),
+            path: point.payload.path,
             relevantContent: {
-              text: formattedText,
+              text: matches.map(m => `...${m.context}...`).join('\n'),
               highlights: [...new Set(matches.map(m => m.term))]
             },
-            score: result.score
+            score: score,
+            matchPercentage: Math.round(score * 100)
           };
-        }));
-  
-      const validResults = processedResults
-        .filter(result => result !== null)
+        })
+        .filter(Boolean)
         .sort((a, b) => b.score - a.score)
         .slice(0, limit);
   
-      return validResults;
+      console.log(`Returning ${results.length} results`);
+      return results;
     } catch (error) {
-      console.error('Error in semantic search:', error);
-      throw error;
+      console.error('Error in search:', error);
+      throw new Error(`Search failed: ${error.message}`);
     }
   }
 

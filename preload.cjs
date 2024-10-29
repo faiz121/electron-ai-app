@@ -34,6 +34,8 @@ const api = {
     
     // Document indexing and search
     indexDocumentsDirectory: () => ipcRenderer.invoke('index-documents-directory'),
+    getLastIndexedDirectory: () => ipcRenderer.invoke('get-last-indexed-directory'),
+
     semanticSearch: (query) => ipcRenderer.invoke('semantic-search', query),
     showItemInFolder: (path) => ipcRenderer.invoke('show-item-in-folder', path),
     
@@ -56,9 +58,7 @@ const api = {
     onProcessingError: (callback) => {
         ipcRenderer.on('processing-error', (event, ...args) => callback(...args));
     },
-    onIndexingStatus: (callback) => {
-        ipcRenderer.on('indexing-status', (event, ...args) => callback(...args));
-    },
+    onIndexingStatus: (callback) => ipcRenderer.on('indexing-status', (_, status) => callback(status)),
     onAddUserMessage: (callback) => {
         ipcRenderer.on('add-user-message', (event, ...args) => callback(...args));
     },
@@ -78,7 +78,9 @@ const api = {
         ipcRenderer.removeAllListeners(channel);
     },
     
-    getFilePreview: (filePath) => ipcRenderer.invoke('get-file-preview', filePath)
+    getFilePreview: (filePath) => ipcRenderer.invoke('get-file-preview', filePath),
+    getCollectionStatus: () => ipcRenderer.invoke('get-collection-status'),
+
 };
 
 // Expose the API
