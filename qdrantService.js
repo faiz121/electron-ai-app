@@ -1,11 +1,11 @@
-const { QdrantClient } = require("@qdrant/js-client-rest");
-const { OpenAI } = require('openai');
-const fs = require('fs').promises;
-const path = require('path');
-const pdf = require('pdf-parse');
-const XLSX = require('xlsx');
-const csvParse = require('csv-parse/lib/sync');
-const crypto = require('crypto');
+import { QdrantClient } from "@qdrant/js-client-rest";
+import { fileURLToPath } from 'url';
+import path from 'path';
+import { promises as fs } from 'fs';
+import pdf from 'pdf-parse';
+import XLSX from 'xlsx';
+import { parse as csvParse } from 'csv-parse/sync'; // Fixed CSV parse import
+import crypto from 'crypto';
 
 class QdrantService {
   constructor() {
@@ -14,9 +14,18 @@ class QdrantService {
       timeout: 5000, // 5 seconds timeout
       retries: 3    // Number of retries
     });
-    this.openai = new OpenAI();
+    this.embedder = null;
+    // this.openai = new OpenAI();
     this.collectionName = 'documents';
     this.initialized = false;
+  }
+
+  async initializeEmbedder() {
+    if (!this.embedder) {
+      // Dynamic import for the transformers package
+      const { pipeline } = await import('@xenova/transformers');
+      this.embedder = await pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2');
+    }
   }
 
   // Generate UUID from filename to ensure consistency across runs
@@ -27,53 +36,148 @@ class QdrantService {
       .digest('hex');
   }
 
-  async processNaturalLanguageQuery(query) {
-    const prompt = `
-      Analyze this search query and extract specific search criteria.
-      Query: "${query}"
-      
-      Return ONLY a JSON object with this exact structure:
-      {
-        "doctors": ["exact doctor names to find"],
-        "medicalTerms": ["medical/clinical terms to find"],
-        "conditions": ["medical conditions to find"],
-        "requireAll": boolean (whether all terms must match)
-      }
-
-      For the query "I want docs with neuro or if it contains doctor's name as zaid",
-      you should return:
-      {
-        "doctors": ["zaid"],
-        "medicalTerms": ["neuro"],
-        "conditions": [],
-        "requireAll": false
-      }
-      
-      Extract ONLY explicitly mentioned terms. Do not infer or expand terms.
-    `;
-
+  async askQuestion_llm_helper(content, prompt) {
     try {
-      const response = await this.openai.chat.completions.create({
-        model: "gpt-4o-mini",
-        messages: [
-          { role: "system", content: "You are a precise medical search query analyzer. Extract only explicitly mentioned terms." },
-          { role: "user", content: prompt }
-        ],
-        temperature: 0.1
+    const url = "http://localhost:11434/api/generate"; // Updated endpoint URL
+
+  
+    const data = {
+          "model": "llama3.2", // Specify the model
+          "prompt": prompt, 
+          "format": "json", // Request JSON output
+          "stream": false,
+        };
+      
+        const headers = {
+          'Content-Type': 'application/json',
+          mode: 'no-cors',  // Disables CORS checks
+        };
+      
+          const response = await fetch(url, {
+            method: 'POST',
+            headers: headers,
+            body: JSON.stringify(data)
+          });
+      
+          if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+          }
+      
+          const result = await response.json();
+          console.log(result)
+      
+          // Extract the answer from the response JSON
+          return result?.response ?? 'No answer received'; 
+
+    } catch(e) {
+      console.log('askQuestion_llm_helper error', e)
+    }
+  }
+
+  async processNaturalLanguageQuery(query) {
+    try {
+      const prompt = `You are a precise search query analyzer. Extract explicitly mentioned names and keywords from this query.
+      
+  Query: "${query}"
+  
+  Return ONLY a JSON object with this exact structure:
+  {
+    "names": ["any person names mentioned"],
+    "keywords": ["specific terms or phrases to search for"],
+    "requireAll": boolean (whether all terms must match)
+  }
+  
+  Examples:
+  
+  Query: "find documents about machine learning or AI written by John Smith"
+  {
+    "names": ["John Smith"],
+    "keywords": ["machine learning", "AI"],
+    "requireAll": false
+  }
+  
+  Query: "show me emails from Sarah containing project updates and budget"
+  {
+    "names": ["Sarah"],
+    "keywords": ["project updates", "budget"],
+    "requireAll": true
+  }
+  
+  Extract ONLY explicitly mentioned terms. Do not infer or expand terms.
+  Use 'requireAll: true' when terms are connected by 'and', false for 'or'.
+  Default to false if conjunction is not specified.`;
+  
+      const result = await this.askQuestion_llm_helper(query, prompt);
+      
+      let searchCriteria;
+      try {
+        // If the result is already a JSON object, use it directly
+        if (typeof result === 'object') {
+          searchCriteria = result;
+        } else {
+          // If it's a string, try to parse it
+          // First try to find a JSON object within the string if it exists
+          const jsonMatch = result.match(/\{[\s\S]*\}/);
+          const jsonStr = jsonMatch ? jsonMatch[0] : result;
+          searchCriteria = JSON.parse(jsonStr);
+        }
+      } catch (parseError) {
+        console.error('Error parsing LLM response:', parseError);
+        // Fallback to a default structure
+        return {
+          names: [],
+          keywords: [query],
+          requireAll: false
+        };
+      }
+  
+      // Validate and clean the response
+      const cleanedCriteria = {
+        names: Array.isArray(searchCriteria.names) ? searchCriteria.names.filter(Boolean) : [],
+        keywords: Array.isArray(searchCriteria.keywords) ? searchCriteria.keywords.filter(Boolean) : [],
+        requireAll: Boolean(searchCriteria.requireAll)
+      };
+  
+      console.log('Extracted search criteria:', cleanedCriteria);
+      return cleanedCriteria;
+  
+    } catch (error) {
+      console.error('Error in natural language query processing:', error);
+      // Return a default structure in case of error
+      return {
+        names: [],
+        keywords: [query], // Use the raw query as a keyword
+        requireAll: false
+      };
+    }
+  }
+
+  async getEmbedding(text) {
+    try {
+      await this.initializeEmbedder();
+
+      // Get embeddings
+      const output = await this.embedder(text, {
+        pooling: 'mean',
+        normalize: true
       });
 
-      const searchCriteria = JSON.parse(response.choices[0].message.content);
-      return searchCriteria;
+      // Convert to array format that Qdrant expects
+      const embedding = Array.from(output.data);
+      return embedding;
     } catch (error) {
-      console.error('Error processing natural language query:', error);
+      console.error('Error getting embedding:', error);
       throw error;
     }
   }
+
 
   async initialize() {
     if (this.initialized) return;
 
     try {
+      await this.initializeEmbedder();
+
       // Add retry logic for Docker startup
       let retries = 5;
       while (retries > 0) {
@@ -86,7 +190,7 @@ class QdrantService {
           if (!collectionExists) {
             await this.client.createCollection(this.collectionName, {
               vectors: {
-                size: 1536,
+                size: 384, // MiniLM-L6-v2 produces 384-dimensional embeddings
                 distance: "Cosine"
               }
             });
@@ -110,18 +214,18 @@ class QdrantService {
     }
   }
 
-  async getEmbedding(text) {
-    try {
-      const response = await this.openai.embeddings.create({
-        model: "text-embedding-ada-002",
-        input: text
-      });
-      return response.data[0].embedding;
-    } catch (error) {
-      console.error('Error getting embedding from OpenAI:', error);
-      throw error;
-    }
-  }
+  // async getEmbedding(text) {
+  //   try {
+  //     const response = await this.openai.embeddings.create({
+  //       model: "text-embedding-ada-002",
+  //       input: text
+  //     });
+  //     return response.data[0].embedding;
+  //   } catch (error) {
+  //     console.error('Error getting embedding from OpenAI:', error);
+  //     throw error;
+  //   }
+  // }
   async extractPDFContent(dataBuffer) {
     try {
       // Enhanced PDF parsing options
@@ -206,7 +310,7 @@ class QdrantService {
           break;
         case '.csv':
           const csvContent = await fs.readFile(filePath, 'utf-8');
-          const records = csvParse(csvContent);
+          const records = csvParse(csvContent); // Using the imported csvParse
           content = records.map(record => record.join(' ')).join('\n');
           break;
         case '.txt':
@@ -465,4 +569,4 @@ class QdrantService {
   }
 }
 
-module.exports = new QdrantService();
+export default new QdrantService();

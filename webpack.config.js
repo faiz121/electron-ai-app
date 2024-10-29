@@ -1,6 +1,11 @@
-const path = require('path');
+// webpack.config.js
+import path from 'path';
+import { fileURLToPath } from 'url';
 
-module.exports = {
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+export default {
   mode: 'development',
   entry: {
     bundle: './src/renderer.js',
@@ -20,10 +25,19 @@ module.exports = {
           loader: 'babel-loader',
           options: {
             presets: [
-              '@babel/preset-env',
+              ['@babel/preset-env', {
+                targets: {
+                  node: 'current',
+                  esmodules: true
+                },
+                modules: false
+              }],
               '@babel/preset-react'
             ]
           }
+        },
+        resolve: {
+          fullySpecified: false
         }
       },
       {
@@ -49,5 +63,8 @@ module.exports = {
   },
   externals: {
     electron: 'commonjs electron'
+  },
+  experiments: {
+    topLevelAwait: true
   }
 };

@@ -1,31 +1,30 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <meta charset="UTF-8">
-    <title>Quick Search</title>
+    <title>Quick Input</title>
     <link rel="stylesheet" href="dist/styles.css">
 </head>
-<body class="bg-transparent">
-    <div id="search-container" class="flex items-center gap-2 bg-gray-800 p-3 rounded-lg border border-gray-700">
-        <select id="mode-select" class="bg-gray-700 text-white rounded-lg p-2 hover:bg-gray-600 transition-colors">
-            <option value="qa">❓</option>
-            <option value="summarize">↧</option>
-            <option value="email">✉</option>
-            <option value="search">🔍</option>
-        </select>
-
+<body>
+    <div id="search-container" class="p-2">
         <textarea 
-            id="search-input" 
-            class="flex-1 bg-gray-700 text-white rounded-lg p-2 resize-none outline-none focus:ring-2 focus:ring-blue-500 caret-blue-500"
+            id="search-input"
+            class="w-full p-2 rounded border-none focus:outline-none resize-none bg-white/90 dark:bg-gray-800/90 dark:text-white"
             placeholder="Type your message..."
-            rows="1"
         ></textarea>
-
+        <select 
+            id="mode-select"
+            class="mt-2 p-2 rounded border-none focus:outline-none bg-white/90 dark:bg-gray-800/90 dark:text-white"
+        >
+            <option value="qa">Q&A</option>
+            <option value="summarize">Summarize</option>
+            <option value="email">Email</option>
+            <option value="search">Search</option>
+        </select>
         <button 
             id="submit-button"
-            class="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg transition-colors"
+            class="mt-2 p-2 rounded bg-blue-500 text-white hover:bg-blue-600"
         >
-            ➤
+            Submit
         </button>
     </div>
     <script src="dist/popup.js"></script>

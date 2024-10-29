@@ -1,12 +1,18 @@
-require('dotenv').config();
-const { app, BrowserWindow, ipcMain, globalShortcut, Tray, Menu, nativeImage, shell } = require('electron');
-const path = require('path');
-const fs = require('fs');
-const OpenAI = require('openai');
-const marked = require('marked').marked
-const qdrantService = require('./qdrantService');
-const fsPromise = require('fs').promises;
-const pdf = require('pdf-parse');
+import 'dotenv/config';
+import { app, screen, BrowserWindow, ipcMain, globalShortcut, Tray, Menu, nativeImage, shell } from 'electron';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import fs from 'fs';
+import { marked } from 'marked';
+import qdrantService from './qdrantService.js';
+import { promises as fsPromise } from 'fs';
+import pdf from 'pdf-parse';
+
+// Get the current file's directory
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+console.log('__dirname', __dirname)
 
 let mainWindow;
 let tray;
@@ -14,19 +20,7 @@ let popupWindow;
 let chats = [];
 let currentChatId = null;
 
-const openai = new OpenAI();
-
-function createNewChat() {
-  const newChat = {
-      id: Date.now().toString(),
-      title: `New Chat`,
-      messages: []
-  };
-  chats.unshift(newChat); // Add new chat to the beginning of the array
-  currentChatId = newChat.id;
-  saveChats();
-  return newChat;
-}
+// const openai = new OpenAI();
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -34,15 +28,16 @@ function createWindow() {
       height: 600,
       frame: false,
       webPreferences: {
-          nodeIntegration: false,  // Changed to false
-          contextIsolation: true,  // Changed to true
-          preload: path.join(__dirname, 'preload.js')
+          nodeIntegration: false,
+          contextIsolation: true,
+          preload: path.join(__dirname, 'preload.cjs'), // Note the .cjs extension
+          sandbox: false
       },
       backgroundColor: '#202123',
       show: false
   });
 
-  mainWindow.loadFile('index.html');
+  mainWindow.loadFile(path.join(__dirname, 'index.html'));
 
   mainWindow.on('close', (event) => {
       if (!app.isQuitting) {
@@ -54,39 +49,51 @@ function createWindow() {
 
 function createPopupWindow() {
   if (popupWindow) {
-    return;
+      return;
   }
+
+  // Log the paths to debug
+  console.log('Current directory:', __dirname);
+  const preloadPath = path.join(__dirname, 'preload.cjs'); // Note the .cjs extension
+  console.log('Preload path:', preloadPath);
   
   popupWindow = new BrowserWindow({
-    width: 600,
-    height: 60,
-    frame: false,
-    show: false,
-    alwaysOnTop: true,
-    webPreferences: {
-      nodeIntegration: false,
-      contextIsolation: true,
-      preload: path.join(__dirname, 'preload.js')
-    },
-    transparent: true,
-    backgroundColor: '#00000000',
-    hasShadow: true,
-    vibrancy: 'ultra-dark', // For macOS
-    visualEffectState: 'active', // For Windows
-    roundedCorners: true
+      width: 600,
+      height: 60,
+      frame: false,
+      show: false,
+      alwaysOnTop: true,
+      webPreferences: {
+          nodeIntegration: false,
+          contextIsolation: true,
+          preload: preloadPath,
+          sandbox: false
+      },
+      transparent: true,
+      backgroundColor: '#00000000',
+      hasShadow: true,
+      vibrancy: 'ultra-dark',
+      visualEffectState: 'active',
+      roundedCorners: true
   });
 
-  popupWindow.loadFile('popup.html');
+  // Add error handling for window loading
+  popupWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription) => {
+      console.error('Failed to load window:', errorCode, errorDescription);
+  });
+
+  popupWindow.loadFile(path.join(__dirname, 'popup.html'));
 
   // Add class to body when window loads
   popupWindow.webContents.on('did-finish-load', () => {
-    popupWindow.webContents.executeJavaScript(`
-      document.body.classList.add('popup');
-    `);
+      console.log('Window loaded successfully');
+      popupWindow.webContents.executeJavaScript(`
+          document.body.classList.add('popup');
+      `);
   });
 
   popupWindow.on('blur', () => {
-    popupWindow.hide();
+      popupWindow.hide();
   });
 }
 
@@ -128,12 +135,51 @@ function togglePopup() {
 }
 
 function getPopupPosition() {
-  const screenBounds = require('electron').screen.getPrimaryDisplay().workAreaSize;
+  const screenBounds = screen.getPrimaryDisplay().workAreaSize;
   const windowBounds = popupWindow.getBounds();
   const x = Math.round(screenBounds.width / 2 - windowBounds.width / 2);
   const y = Math.round(screenBounds.height / 2 - windowBounds.height / 2);
   return { x, y };
 }
+
+
+async function askQuestion_llm_helper(content, prompt) {
+  try {
+  const url = "http://localhost:11434/api/generate"; // Updated endpoint URL
+
+  const data = {
+        "model": "llama3.2", // Specify the model
+        "prompt": prompt, 
+        "format": "json", // Request JSON output
+        "stream": false,
+      };
+    
+      const headers = {
+        'Content-Type': 'application/json',
+        mode: 'no-cors',  // Disables CORS checks
+      };
+    
+        const response = await fetch(url, {
+          method: 'POST',
+          headers: headers,
+          body: JSON.stringify(data)
+        });
+    
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+    
+        const result = await response.json();
+        console.log(result)
+    
+        // Extract the answer from the response JSON
+        return result?.response ?? 'No answer received'; 
+      
+  } catch(e) {
+    console.log('askQuestion_llm_helper error', e)
+  }
+}
+
 
 
 // Replace the existing textProcessors object with this updated version
@@ -192,6 +238,7 @@ async function processWithOpenAI(text, systemPrompt) {
 
 async function customProcessor(text, mode) {
   console.log('text-------', text)
+  console.log('mode-------', mode)
   let prompt = '';
 
   switch (mode) {
@@ -204,14 +251,33 @@ async function customProcessor(text, mode) {
     case 'qa':
       prompt = `Please answer the following question in clear, professional, and concise English. Avoid providing long and unnecessary explanations. Keep it to the point. Return the response like this {"response": "answer" }\n\n${text}`;
       break;
+      case 'search':
+      try {
+        await qdrantService.initialize();
+        const results = await qdrantService.searchSimilarDocuments(text);
+        
+        // Always return a valid JSON string
+        return JSON.stringify({
+          results: Array.isArray(results) ? results : []
+        });
+      } catch (error) {
+        console.error('Error in search mode:', error);
+        return JSON.stringify({ 
+          results: [],
+          error: error.message 
+        });
+      }
+      
     default:
       prompt = text; // Use the text as is if mode is not recognized
   }
 
   try {
     const response = await askQuestion_llm_helper(text, prompt); // Assuming you want to use the same context
-    if(mode === 'qa') return response.response
-    return response;
+    console.log('response------->', response)
+    const parsedResponse = (typeof(response) === 'string') ? JSON.parse(response) : response
+    if(mode === 'qa') return parsedResponse.response
+    return parsedResponse;
   } catch (error) {
     console.error('Error processing text with custom processor:', error);
     throw new Error(`Failed to process text: ${error.message}`);
@@ -221,7 +287,7 @@ async function getChatTitle(text) {
   const prompt = `Please provide a concise title for this text in no more than 5 words, answer exactly with what is asked and do not add any additional details to the response:\n\n${text}`;
 
   try {
-    const title = await processWithOpenAI(text, prompt);
+    const title = await askQuestion_llm_helper(text, prompt);
     return title.trim(); // Trim any extra spaces
   } catch (error) {
     console.error('Error getting chat title:', error);
@@ -348,8 +414,10 @@ ipcMain.on('process-text', async (event, { text, mode, chatId }) => {
     mainWindow.webContents.send('add-user-message', { text, mode });
 
     // Use the appropriate text processor
-    const processor = textProcessors[mode] || textProcessors.qa;
-    const processedText = await processor(text);
+    // const processor = textProcessors[mode] || textProcessors.qa;
+    const processedText = await customProcessor(text, mode)
+    console.log('processedText------', processedText)
+    // const processedText = await processor(text);
 
     // Log the results for debugging
     if (mode === 'search') {
@@ -421,7 +489,7 @@ ipcMain.on('show-main-window', () => {
 ipcMain.handle('index-documents-directory', async (event) => {
   try {
       await qdrantService.initialize();
-      const documentsPath = '/Users/mohammedfaizulislam/Documents/vectordocs'
+      const documentsPath = '/Users/faimohammed/Documents/vectordocs'
       const updateStatus = (status) => {
           mainWindow.webContents.send('indexing-status', status);
       };
