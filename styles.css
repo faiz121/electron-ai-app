@@ -3,13 +3,12 @@
 @tailwind utilities;
 
 @layer components {
-
-  /* Base styles */
+  /* Main Layout */
   body {
-    @apply bg-gray-900 text-gray-100;
+    @apply bg-gray-900 text-gray-100 h-screen overflow-hidden;
   }
 
-  /* Sidebar styles */
+  /* Sidebar */
   #sidebar {
     @apply fixed left-0 top-0 h-full w-64 bg-gray-850 border-r border-gray-700 p-4 flex flex-col transform -translate-x-full transition-transform duration-300 ease-in-out z-50;
   }
@@ -51,27 +50,22 @@
   #top-bar {
     @apply bg-gray-850 p-4 flex justify-between items-center border-b border-gray-700 cursor-grab active:cursor-grabbing;
     -webkit-app-region: drag;
-    /* Add this line to make it draggable */
   }
 
   #top-bar:hover {
     @apply bg-gray-800;
   }
 
-
   #top-bar button,
   #toggle-sidebar,
   #close-button {
     @apply cursor-pointer;
     -webkit-app-region: no-drag;
-    /* Ensure buttons remain clickable */
   }
 
-  /* Update existing close button styles to include no-drag */
   #close-button {
     @apply text-4xl font-light hover:bg-gray-700 rounded-lg w-8 h-8 flex items-center justify-center transition-all duration-200 hover:scale-105;
     -webkit-app-region: no-drag;
-    /* Add this line */
   }
 
   /* Conversation area */
@@ -79,12 +73,33 @@
     @apply flex-1 overflow-y-auto p-4 space-y-4;
   }
 
-  /* Message styling */
-  .message {
-    @apply hover:opacity-100 transition-opacity opacity-95;
+  #search-root {
+    @apply relative w-full;
+    position: sticky;
+    bottom: 0;
+    z-index: 50;
+  }
+  #input-area {
+    @apply flex-shrink-0 relative border-t border-gray-700 bg-gray-800;
   }
 
-  .message+.message {
+  .search-active {
+    @apply overflow-hidden;
+  }
+  
+  /* Command dropdown styles */
+  .command-dropdown {
+    @apply absolute bottom-full left-0 right-0 mb-2 bg-gray-800 rounded-lg border border-gray-700 shadow-lg;
+    max-height: calc(100vh - 200px);
+    overflow-y: auto;
+  }
+  
+  /* Message styling */
+  .message {
+    @apply flex items-start gap-4 mb-4;
+  }
+
+  .message + .message {
     @apply mt-2;
   }
 
@@ -102,7 +117,7 @@
 
   /* User message specific */
   .user-message {
-    @apply flex justify-end;
+    @apply justify-end;
   }
 
   .user-message .message-icon {
@@ -115,7 +130,7 @@
 
   /* AI message specific */
   .ai-message {
-    @apply flex justify-start;
+    @apply justify-start;
   }
 
   .ai-message .message-content {
@@ -126,30 +141,9 @@
     @apply max-w-full w-full;
   }
 
-  /* Input area */
-  #input-area {
-    @apply p-4 bg-gray-850 border-t border-gray-700;
-  }
-
-  #search-container {
-    @apply flex items-center gap-2;
-  }
-
-  #search-input {
-    @apply flex-1 bg-gray-700 text-white rounded-lg p-2 resize-none outline-none focus:ring-2 focus:ring-blue-500 caret-blue-500;
-  }
-
-  #mode-select {
-    @apply bg-gray-700 text-white rounded-lg p-2 hover:bg-gray-600 transition-colors cursor-pointer outline-none;
-  }
-
-  #submit-button {
-    @apply bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg transition-colors;
-  }
-
   /* Index Documents Section */
   .index-docs-container {
-    @apply p-4 border-b border-gray-700 flex-shrink-0;  /* prevent shrinking */
+    @apply p-4 border-b border-gray-700 flex-shrink-0;
   }
 
   .index-docs-container .action-button {
@@ -197,33 +191,112 @@
     animation-delay: 0.4s;
   }
 
-  /* Popup styles */
+  /* Command Search Bar Styles */
+  .popup-container {
+    @apply relative w-full;
+  }
+
+  .fixed-input-container {
+    @apply sticky top-0 z-50 bg-gray-800/95 rounded-lg shadow-lg;
+    backdrop-filter: blur(8px);
+  }
+
+  .input-wrapper {
+    @apply flex items-center gap-2 px-4 py-3 border border-gray-700 rounded-lg;
+  }
+
+  .command-tag {
+    @apply flex items-center gap-1 bg-blue-500/20 text-blue-400 px-2 py-1 rounded text-sm;
+  }
+
+  .command-input {
+    @apply flex-1 bg-transparent border-none outline-none text-white text-sm placeholder-gray-400;
+  }
+
+  .commands-dropdown-container {
+    @apply absolute left-0 right-0 mt-2 bg-gray-800 rounded-lg border border-gray-700 shadow-xl overflow-hidden;
+    max-height: 300px;
+    overflow-y: auto;
+  }
+
+  .command-item {
+    @apply flex items-center gap-2 px-4 py-3 hover:bg-gray-700 cursor-pointer transition-colors;
+  }
+
+  .command-item.selected {
+    @apply bg-gray-700;
+  }
+
+  .command-item-content {
+    @apply flex flex-col min-w-0;
+  }
+
+  .command-item-label {
+    @apply text-sm text-white font-medium;
+  }
+
+  .command-item-description {
+    @apply text-xs text-gray-400;
+  }
+
+  /* Popup Specific Styles */
   body.popup {
+    @apply bg-transparent m-0 p-0 overflow-hidden;
+  }
+
+  body.popup #root {
+    @apply h-full flex flex-col;
+    min-height: 60px;
+  }
+
+  .overflow-fix {
+    @apply overflow-hidden;
+  }
+
+  .popup #root {
+    @apply flex flex-col h-full overflow-hidden bg-gray-800/95 rounded-lg shadow-xl;
+    backdrop-filter: blur(8px);
+  }
+
+  .popup .flex-1 {
+    min-height: 0;
+  }
+
+  .popup .overflow-auto::-webkit-scrollbar {
+    @apply w-1.5;
+  }
+
+  .popup .overflow-auto::-webkit-scrollbar-track {
     @apply bg-transparent;
   }
 
-  .popup #search-container {
-    @apply flex items-center gap-2 bg-gray-800/95 p-3 rounded-lg border border-gray-700 shadow-lg;
+  .popup .overflow-auto::-webkit-scrollbar-thumb {
+    @apply bg-gray-600 rounded-full;
   }
 
-  .popup #search-input {
-    @apply min-h-[36px] text-sm leading-tight;
+  .popup .overflow-auto::-webkit-scrollbar-thumb:hover {
+    @apply bg-gray-500;
   }
 
-  .popup #submit-button {
-    @apply min-w-[40px] hover:scale-105 active:scale-95;
+  /* Media Queries */
+  @media (max-width: 768px) {
+    #sidebar {
+      @apply absolute;
+    }
+    
+    #main-content.sidebar-open {
+      @apply ml-0;
+    }
   }
-}
 
-/* Custom scrollbar */
-::-webkit-scrollbar {
-  @apply w-2;
-}
-
-::-webkit-scrollbar-track {
-  @apply bg-gray-800;
-}
-
-::-webkit-scrollbar-thumb {
-  @apply bg-gray-600 rounded hover:bg-gray-500;
+  /* Dark Mode Specific */
+  @media (prefers-color-scheme: dark) {
+    .fixed-input-container {
+      @apply bg-gray-800/95;
+    }
+    
+    .commands-dropdown-container {
+      @apply bg-gray-800/95;
+    }
+  }
 }

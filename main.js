@@ -55,9 +55,10 @@ function createWindow() {
   });
 }
 
+// In main.js, update createPopupWindow
 function createPopupWindow() {
   if (popupWindow) {
-      return;
+    return;
   }
 
   // Log the paths to debug
@@ -66,42 +67,42 @@ function createPopupWindow() {
   console.log('Preload path:', preloadPath);
   
   popupWindow = new BrowserWindow({
-      width: 600,
-      height: 60,
-      frame: false,
-      show: false,
-      alwaysOnTop: true,
-      webPreferences: {
-          nodeIntegration: false,
-          contextIsolation: true,
-          preload: preloadPath,
-          sandbox: false
-      },
-      transparent: true,
-      backgroundColor: '#00000000',
-      hasShadow: true,
-      vibrancy: 'ultra-dark',
-      visualEffectState: 'active',
-      roundedCorners: true
+    width: 600,
+    height: 60,
+    frame: false,
+    show: false,
+    alwaysOnTop: true,
+    webPreferences: {
+      nodeIntegration: false,
+      contextIsolation: true,
+      preload: preloadPath,
+      sandbox: false
+    },
+    transparent: true,
+    backgroundColor: '#00000000',
+    hasShadow: true,
+    vibrancy: 'ultra-dark',
+    visualEffectState: 'active',
+    roundedCorners: true
   });
 
   // Add error handling for window loading
   popupWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription) => {
-      console.error('Failed to load window:', errorCode, errorDescription);
+    console.error('Failed to load window:', errorCode, errorDescription);
   });
 
   popupWindow.loadFile(path.join(__dirname, 'popup.html'));
 
   // Add class to body when window loads
   popupWindow.webContents.on('did-finish-load', () => {
-      console.log('Window loaded successfully');
-      popupWindow.webContents.executeJavaScript(`
-          document.body.classList.add('popup');
-      `);
+    console.log('Window loaded successfully');
+    popupWindow.webContents.executeJavaScript(`
+      document.body.classList.add('popup');
+    `);
   });
 
   popupWindow.on('blur', () => {
-      popupWindow.hide();
+    popupWindow.hide();
   });
 }
 
@@ -475,9 +476,17 @@ ipcMain.on('expand-popup', () => {
   mainWindow.show();
 });
 
-ipcMain.on('resize-popup', (event, { width, height }) => {
-  if (popupWindow) {
-      popupWindow.setSize(width, height);
+ipcMain.on('resize-popup', (event, width, height) => {
+  console.log('Resize event received:', { width, height }); // Debug log
+  if (popupWindow && typeof width === 'number' && typeof height === 'number') {
+    try {
+      popupWindow.setSize(Math.round(width), Math.round(height));
+      console.log('Window resized successfully');
+    } catch (error) {
+      console.error('Error resizing window:', error);
+    }
+  } else {
+    console.error('Invalid resize parameters:', { width, height });
   }
 });
 

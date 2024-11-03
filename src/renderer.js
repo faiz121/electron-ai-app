@@ -1,15 +1,12 @@
 import * as React from 'react';
 import { createRoot } from 'react-dom/client';
 import { SearchResults } from './components/search';
+import CommandSearchBar from './components/CommandSearchBar';
 
 document.addEventListener('DOMContentLoaded', () => {
-  let processingText = false
+  let processingText = false;
   // DOM Elements
-  const searchInput = document.getElementById('search-input');
-  const submitButton = document.getElementById('submit-button');
-  const modeSelect = document.getElementById('mode-select');
   const conversationArea = document.getElementById('conversation-area');
-  const loadingIndicator = document.querySelector('.loading-dots');
   const closeButton = document.getElementById('close-button');
   const newChatBtn = document.getElementById('new-chat-btn');
   const chatList = document.getElementById('chat-list');
@@ -19,6 +16,19 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // State
   let currentChatId = null;
+
+  // Render CommandSearchBar
+  const searchRoot = document.getElementById('search-root');
+  if (searchRoot) {
+    const root = createRoot(searchRoot);
+    root.render(
+      <CommandSearchBar 
+        onSubmit={(text, mode) => {
+          window.electronAPI?.processText(text, mode, currentChatId);
+        }}
+      />
+    );
+  }
 
   const sidebarOpen = localStorage.getItem('sidebarOpen') === 'true';
 
@@ -41,77 +51,25 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
+  // Create index documents container
   const indexDocsContainer = document.createElement('div');
-indexDocsContainer.className = 'index-docs-container';
-indexDocsContainer.innerHTML = `
-  <button class="action-button" id="indexDocsBtn">
-    <span class="button-text">Index Documents</span>
-  </button>
-  <div class="index-status" style="display: none;">
-    <div class="status-text"></div>
-    <div class="indexed-path"></div>
-    <div class="last-indexed-info"></div>
-  </div>
-`;
-document.querySelector('#sidebar').insertBefore(indexDocsContainer, chatList);
+  indexDocsContainer.className = 'index-docs-container';
+  indexDocsContainer.innerHTML = `
+    <button class="action-button" id="indexDocsBtn">
+      <span class="button-text">Index Documents</span>
+    </button>
+    <div class="index-status" style="display: none;">
+      <div class="status-text"></div>
+      <div class="indexed-path"></div>
+      <div class="last-indexed-info"></div>
+    </div>
+  `;
+  document.querySelector('#sidebar').insertBefore(indexDocsContainer, chatList);
 
-const indexBtn = document.getElementById('indexDocsBtn');
-const statusText = indexDocsContainer.querySelector('.status-text');
-const indexedPath = indexDocsContainer.querySelector('.indexed-path');
-const statusContainer = indexDocsContainer.querySelector('.index-status');
-const lastIndexedInfo = indexDocsContainer.querySelector('.last-indexed-info');
-
-  // Add search option to mode select
-  const searchOption = document.createElement('option');
-  searchOption.value = 'search';
-  searchOption.textContent = '🔍';
-  modeSelect.appendChild(searchOption);
-
-  // Check for last indexed directory on startup
-async function checkLastIndexedDirectory() {
-  try {
-    const lastPath = await window.electronAPI.getLastIndexedDirectory();
-    if (lastPath) {
-      statusContainer.style.display = 'block';
-      lastIndexedInfo.innerHTML = `
-        <div class="last-indexed-header">Last Indexed Directory:</div>
-        <div class="last-indexed-path">${lastPath}</div>
-      `;
-    }
-  } catch (error) {
-    console.error('Error getting last indexed directory:', error);
-  }
-}
-
-
-  // Functions
-  function adjustTextareaHeight() {
-    searchInput.style.height = 'auto';
-    searchInput.style.height = Math.min(searchInput.scrollHeight, 200) + 'px';
-  }
-
-  function processText(text, mode) {
-    if (processingText) return;
-
-    try {
-      processingText = true;
-      console.log('Processing text:', { text, mode });
-      window.electronAPI.processText(text, mode, currentChatId);
-    } finally {
-      processingText = false;
-    }
-  }
-
-
-  function submitText() {
-    const text = searchInput.value.trim();
-    const mode = modeSelect.value;
-    if (text !== '') {
-      processText(text, mode);
-      searchInput.value = '';
-      adjustTextareaHeight();
-    }
-  }
+  const indexBtn = document.getElementById('indexDocsBtn');
+  const statusText = indexDocsContainer.querySelector('.status-text');
+  const statusContainer = indexDocsContainer.querySelector('.index-status');
+  const lastIndexedInfo = indexDocsContainer.querySelector('.last-indexed-info');
 
   function addMessageToConversation(text, sender, mode) {
     const messageElement = document.createElement('div');
@@ -145,7 +103,6 @@ async function checkLastIndexedDirectory() {
       contentElement.textContent = text;
     }
   
-    // Add elements in the correct order based on sender
     if (sender === 'user') {
       messageElement.appendChild(contentElement);
       messageElement.appendChild(iconElement);
@@ -159,7 +116,6 @@ async function checkLastIndexedDirectory() {
   }
 
   function showLoadingIndicator() {
-    // Remove any existing loading indicators first
     hideLoadingIndicator();
 
     const loadingElement = document.createElement('div');
@@ -181,7 +137,6 @@ async function checkLastIndexedDirectory() {
   }
 
   function hideLoadingIndicator() {
-    // Remove all loading indicators
     const loadingIndicators = conversationArea.querySelectorAll('.loading-indicator');
     loadingIndicators.forEach(indicator => indicator.remove());
   }
@@ -202,22 +157,6 @@ async function checkLastIndexedDirectory() {
   }
 
   // Event Listeners
-  searchInput.addEventListener('input', adjustTextareaHeight);
-
-  searchInput.addEventListener('keypress', (event) => {
-    console.log('key pressed --->', event.key)
-    if (event.key === 'Enter' && !event.shiftKey) {
-      console.log('key pressed --->', event.key)
-      event.preventDefault();
-      if (!processingText) {
-        console.log('processingText---->')
-        submitText();
-      }
-    }
-  });
-
-  submitButton.addEventListener('click', submitText);
-
   closeButton.addEventListener('click', () => {
     window.electronAPI.hideMainWindow();
   });
@@ -230,11 +169,10 @@ async function checkLastIndexedDirectory() {
   toggleSidebarBtn.addEventListener('click', () => {
     sidebar.classList.toggle('open');
     mainContent.classList.toggle('sidebar-open');
-
-    // Save state to localStorage
     localStorage.setItem('sidebarOpen', sidebar.classList.contains('open'));
   });
 
+  // Index button click handler
   indexBtn.addEventListener('click', async () => {
     try {
       indexBtn.disabled = true;
@@ -321,21 +259,19 @@ async function checkLastIndexedDirectory() {
 
   // Handle window resize
   window.addEventListener('resize', () => {
-    if (window.innerWidth <= 768) {  // Mobile breakpoint
+    if (window.innerWidth <= 768) {
       sidebar.classList.remove('open');
       mainContent.classList.remove('sidebar-open');
     }
   });
 
-  // Update the event handlers
+  // Event handlers
   window.electronAPI.onAddUserMessage((data) => {
-    console.log('add-user-message');
     addMessageToConversation(data.text, 'user', data.mode);
     showLoadingIndicator();
   });
 
   window.electronAPI.onUpdateConversation((data) => {
-    console.log('update-conversation', data);
     hideLoadingIndicator();
     addMessageToConversation(data.renderedText, 'ai', data.mode);
     updateChatList();
@@ -384,6 +320,22 @@ async function checkLastIndexedDirectory() {
 
   // Initial setup
   updateChatList();
-  searchInput.focus();
+  
+  // Check last indexed directory
+  async function checkLastIndexedDirectory() {
+    try {
+      const lastPath = await window.electronAPI.getLastIndexedDirectory();
+      if (lastPath) {
+        statusContainer.style.display = 'block';
+        lastIndexedInfo.innerHTML = `
+          <div class="last-indexed-header">Last Indexed Directory:</div>
+          <div class="last-indexed-path">${lastPath}</div>
+        `;
+      }
+    } catch (error) {
+      console.error('Error getting last indexed directory:', error);
+    }
+  }
+  
   checkLastIndexedDirectory();
 });

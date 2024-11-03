@@ -1,32 +1,30 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Quick Input</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Quick Search</title>
     <link rel="stylesheet" href="dist/styles.css">
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background: transparent;
+            min-height: 60px;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+        }
+        #root {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            justify-content: flex-end;
+        }
+    </style>
 </head>
-<body>
-    <div id="search-container" class="p-2">
-        <textarea 
-            id="search-input"
-            class="w-full p-2 rounded border-none focus:outline-none resize-none bg-white/90 dark:bg-gray-800/90 dark:text-white"
-            placeholder="Type your message..."
-        ></textarea>
-        <select 
-            id="mode-select"
-            class="mt-2 p-2 rounded border-none focus:outline-none bg-white/90 dark:bg-gray-800/90 dark:text-white"
-        >
-            <option value="qa">Q&A</option>
-            <option value="summarize">Summarize</option>
-            <option value="email">Email</option>
-            <option value="search">Search</option>
-        </select>
-        <button 
-            id="submit-button"
-            class="mt-2 p-2 rounded bg-blue-500 text-white hover:bg-blue-600"
-        >
-            Submit
-        </button>
-    </div>
+<body class="popup">
+    <div id="root"></div>
     <script src="dist/popup.js"></script>
 </body>
 </html>

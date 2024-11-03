@@ -28,8 +28,12 @@ const api = {
     
     // Popup specific
     resizePopup: (width, height) => {
-        console.log('resizePopup called:', { width, height });
-        return ipcRenderer.send('resize-popup', { width, height });
+        console.log('resizePopup called with:', width, height); // Debug log
+        if (typeof width !== 'number' || typeof height !== 'number') {
+            console.error('Invalid dimensions:', { width, height });
+            return;
+        }
+        ipcRenderer.send('resize-popup', width, height);
     },
     
     // Document indexing and search
