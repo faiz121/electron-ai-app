@@ -41,25 +41,25 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-  const indexDocsContainer = document.createElement('div');
-indexDocsContainer.className = 'index-docs-container';
-indexDocsContainer.innerHTML = `
-  <button class="action-button" id="indexDocsBtn">
-    <span class="button-text">Index Documents</span>
-  </button>
-  <div class="index-status" style="display: none;">
-    <div class="status-text"></div>
-    <div class="indexed-path"></div>
-    <div class="last-indexed-info"></div>
-  </div>
-`;
-document.querySelector('#sidebar').insertBefore(indexDocsContainer, chatList);
+//   indexDocsContainer.className = 'index-docs-container';
+//   indexDocsContainer.innerHTML = `
+//     <button class="action-button" id="indexDocsBtn">
+//       <span class="button-text">Index Documents</span>
+//     </button>
+//     <div class="index-status" style="display: none;">
+//       <div class="status-text"></div>
+//       <div class="indexed-path"></div>
+//       <div class="last-indexed-info"></div>
+//     </div>
+//   `;
+// document.querySelector('#sidebar').insertBefore(indexDocsContainer, chatList);
 
 const indexBtn = document.getElementById('indexDocsBtn');
-const statusText = indexDocsContainer.querySelector('.status-text');
-const indexedPath = indexDocsContainer.querySelector('.indexed-path');
-const statusContainer = indexDocsContainer.querySelector('.index-status');
-const lastIndexedInfo = indexDocsContainer.querySelector('.last-indexed-info');
+const indexDocsContainer = document.querySelector('.index-docs-container');
+const statusText = document.querySelector('.status-text');
+// const indexedPath = document.querySelector('.indexed-path');
+const statusContainer = document.querySelector('.index-status');
+const lastIndexedInfo = document.querySelector('.last-indexed-info');
 
   // Add search option to mode select
   const searchOption = document.createElement('option');
@@ -71,13 +71,13 @@ const lastIndexedInfo = indexDocsContainer.querySelector('.last-indexed-info');
 async function checkLastIndexedDirectory() {
   try {
     const lastPath = await window.electronAPI.getLastIndexedDirectory();
-    if (lastPath) {
-      statusContainer.style.display = 'block';
-      lastIndexedInfo.innerHTML = `
-        <div class="last-indexed-header">Last Indexed Directory:</div>
-        <div class="last-indexed-path">${lastPath}</div>
-      `;
-    }
+    // if (lastPath) {
+    //   statusContainer.style.display = 'block';
+    //   lastIndexedInfo.innerHTML = `
+    //     <div class="last-indexed-header">Last Indexed Directory:</div>
+    //     <div class="last-indexed-path">${lastPath}</div>
+    //   `;
+    // }
   } catch (error) {
     console.error('Error getting last indexed directory:', error);
   }
@@ -238,7 +238,7 @@ async function checkLastIndexedDirectory() {
   indexBtn.addEventListener('click', async () => {
     try {
       indexBtn.disabled = true;
-      indexBtn.querySelector('.button-text').textContent = 'Selecting Directory...';
+      // indexBtn.querySelector('.button-text').textContent = 'Selecting Directory...';
       
       const result = await window.electronAPI.indexDocumentsDirectory();
       
@@ -248,7 +248,7 @@ async function checkLastIndexedDirectory() {
       }
   
       if (result.success) {
-        statusContainer.style.display = 'block';
+        // statusContainer.style.display = 'block';
         const successCount = result.results.success.length;
         const failCount = result.results.failed.length;
         
@@ -260,24 +260,24 @@ async function checkLastIndexedDirectory() {
         addMessageToConversation(message, 'ai', 'system');
         
         if (result.path) {
-          lastIndexedInfo.innerHTML = `
-            <div class="last-indexed-header">Current Directory:</div>
-            <div class="last-indexed-path">${result.path}</div>
-          `;
+          // lastIndexedInfo.innerHTML = `
+          //   <div class="last-indexed-header">Current Directory:</div>
+          //   <div class="last-indexed-path">${result.path}</div>
+          // `;
         }
       } else {
-        statusContainer.style.display = 'block';
+       // statusContainer.style.display = 'block';
         statusText.textContent = `Failed to index documents: ${result.error}`;
         addMessageToConversation(`Failed to index documents: ${result.error}`, 'ai', 'error');
       }
     } catch (error) {
       console.error('Error during indexing:', error);
-      statusContainer.style.display = 'block';
+      // statusContainer.style.display = 'block';
       statusText.textContent = `Error: ${error.message}`;
       addMessageToConversation(`Error indexing documents: ${error.message}`, 'ai', 'error');
     } finally {
       indexBtn.disabled = false;
-      indexBtn.querySelector('.button-text').textContent = 'Index Documents';
+      // indexBtn.querySelector('.button-text').textContent = 'Index Documents';
     }
   });
 

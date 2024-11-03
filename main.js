@@ -432,12 +432,12 @@ ipcMain.on('process-text', async (event, { text, mode, chatId }) => {
       console.log('Search results:', JSON.parse(processedText));
     }
 
-    if (chat) {
-      const chatTitle = await getChatTitle(text);
-      chat.title = chatTitle;
-      saveChats();
-      mainWindow.webContents.send('chat-title-updated', { chatId, title: chatTitle });
-    }
+    // if (chat) {
+    //   const chatTitle = await getChatTitle(text);
+    //   chat.title = chatTitle;
+    //   saveChats();
+    //   mainWindow.webContents.send('chat-title-updated', { chatId, title: chatTitle });
+    // }
 
     chat.messages.push({ 
       text: processedText, 
