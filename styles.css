@@ -10,7 +10,12 @@
 
   /* Sidebar */
   #sidebar {
-    @apply fixed left-0 top-0 h-full w-64 bg-gray-850 border-r border-gray-700 p-4 flex flex-col transform -translate-x-full transition-transform duration-300 ease-in-out z-50;
+    @apply fixed left-0 top-0 h-full w-64 bg-gray-850 flex flex-col transition-all duration-300 ease-in-out z-50;
+    border-right: 1px solid theme('colors.gray.700');
+  }
+
+  .actions {
+    @apply flex items-center justify-between gap-4 mt-12 px-4;  /* Added mt-12 for spacing from top */
   }
 
   #sidebar.open {
@@ -18,12 +23,18 @@
   }
 
   #new-chat-btn {
-    @apply bg-gray-700 hover:bg-gray-600 text-white px-4 py-2 rounded-lg mb-4 transition-colors;
+    @apply bg-gray-700 hover:bg-gray-600 text-white p-2 rounded-lg transition-colors flex-shrink-0;
+    width: 40px;
+    height: 40px;
+  }
+
+  #chat-list {
+    @apply flex-1 overflow-y-auto;
   }
 
   /* Chat items */
   .chat-item {
-    @apply flex items-center justify-between p-2 rounded-lg hover:bg-gray-750 cursor-pointer text-gray-300;
+    @apply flex items-center justify-between p-2 pl-3 rounded-lg hover:bg-gray-750 cursor-pointer text-gray-300;
   }
 
   .chat-item.active {
@@ -40,8 +51,9 @@
 
   /* Main content layout */
   #main-content {
-    @apply ml-0 h-screen flex flex-col transition-all duration-300 ease-in-out;
+    @apply ml-64 h-screen flex flex-col;
   }
+  
 
   #main-content.sidebar-open {
     @apply ml-64;
@@ -70,7 +82,8 @@
 
   /* Conversation area */
   #conversation-area {
-    @apply flex-1 overflow-y-auto p-4 space-y-4;
+    @apply flex-1 overflow-y-auto p-4;
+    height: calc(100vh - 128px); /* Account for top-bar and input-area */
   }
 
   #search-root {
@@ -141,9 +154,54 @@
     @apply max-w-full w-full;
   }
 
+  /* Input area */
+  #input-area {
+    @apply sticky bottom-0 w-full bg-gray-850 border-t border-gray-700;
+    min-height: 64px; /* Minimum height for input area */
+  }
+
+  #search-container {
+    @apply flex items-center gap-2 p-4;
+  }
+
+  #search-input {
+    @apply flex-1 bg-gray-700 text-white rounded-lg p-2 resize-none outline-none focus:ring-2 focus:ring-blue-500 caret-blue-500;
+  }
+
+  #mode-select {
+    @apply bg-gray-700 text-white rounded-lg p-2 hover:bg-gray-600 transition-colors cursor-pointer outline-none;
+  }
+
+  #submit-button {
+    @apply bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg transition-colors;
+  }
+
   /* Index Documents Section */
   .index-docs-container {
-    @apply p-4 border-b border-gray-700 flex-shrink-0;
+    @apply flex-shrink-0;
+    width: 40px;
+    height: 40px;
+  }
+
+  #indexDocsBtn:hover {
+    @apply bg-gray-600;
+  }
+  
+  /* Ensure proper button styling */
+  #indexDocsBtn {
+    @apply bg-gray-700 hover:bg-gray-600 text-white p-2 rounded-lg transition-colors h-full w-full flex items-center justify-center cursor-pointer;
+  }
+
+  #indexDocsBtn svg {
+    @apply w-full h-full text-white;  /* Make SVG visible and white */
+  }
+
+  #indexDocsBtn, #new-chat-btn {
+    @apply h-10 w-10 flex items-center justify-center;  /* Consistent sizing */
+  }
+
+  .svg-icon {
+    @apply w-6 h-6;  /* Set explicit dimensions for the SVG icon */
   }
 
   .index-docs-container .action-button {
@@ -270,12 +328,12 @@
     @apply bg-transparent;
   }
 
-  .popup .overflow-auto::-webkit-scrollbar-thumb {
-    @apply bg-gray-600 rounded-full;
+  .popup #search-container {
+    @apply flex max-h-[53px] items-center gap-2 bg-gray-800/95 p-3 rounded-lg border border-gray-700 shadow-lg;
   }
 
-  .popup .overflow-auto::-webkit-scrollbar-thumb:hover {
-    @apply bg-gray-500;
+  .popup #search-input {
+    @apply max-h-[35px] text-sm leading-tight;
   }
 
   /* Media Queries */
@@ -289,14 +347,38 @@
     }
   }
 
-  /* Dark Mode Specific */
-  @media (prefers-color-scheme: dark) {
-    .fixed-input-container {
-      @apply bg-gray-800/95;
-    }
-    
-    .commands-dropdown-container {
-      @apply bg-gray-800/95;
-    }
+  .popup #mode-select {
+    @apply mt-0;
+  }
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  @apply w-2;
+}
+
+::-webkit-scrollbar-track {
+  @apply bg-gray-800;
+}
+
+::-webkit-scrollbar-thumb {
+  @apply bg-gray-600 rounded hover:bg-gray-500;
+}
+
+@media (max-width: 768px) {
+  #sidebar {
+    @apply -translate-x-full;
+  }
+  
+  #main-content {
+    @apply ml-0;
+  }
+  
+  #sidebar.open {
+    @apply translate-x-0;
+  }
+  
+  #main-content.sidebar-open {
+    @apply ml-64;
   }
 }

@@ -1,3 +1,4 @@
+import apiServer from './apiServer.js';
 import 'dotenv/config';
 import { app, screen, BrowserWindow, ipcMain, globalShortcut, Tray, Menu, nativeImage, shell, dialog } from 'electron';
 import path from 'path';
@@ -278,7 +279,7 @@ async function customProcessor(text, mode) {
       }
       
     default:
-      prompt = text; // Use the text as is if mode is not recognized
+      prompt = `Please answer the following question in clear, professional, and concise English. Avoid providing long and unnecessary explanations. Keep it to the point. Return the response like this {"response": "answer" }\n\n${text}`;
   }
 
   try {
@@ -345,6 +346,9 @@ function deleteChat(chatId) {
 
 app.whenReady().then(async () => {
   try {
+    // Start the API server
+    await apiServer.start();
+
     await handleStartup();
     loadChats();
     if (chats.length === 0) {
@@ -369,8 +373,9 @@ app.whenReady().then(async () => {
   app.quit();
 });
 
-app.on('will-quit', () => {
+app.on('will-quit', async () => {
   globalShortcut.unregisterAll();
+  await apiServer.stop();
 });
 
 app.on('window-all-closed', function () {
@@ -433,12 +438,12 @@ ipcMain.on('process-text', async (event, { text, mode, chatId }) => {
       console.log('Search results:', JSON.parse(processedText));
     }
 
-    if (chat) {
-      const chatTitle = await getChatTitle(text);
-      chat.title = chatTitle;
-      saveChats();
-      mainWindow.webContents.send('chat-title-updated', { chatId, title: chatTitle });
-    }
+    // if (chat) {
+    //   const chatTitle = await getChatTitle(text);
+    //   chat.title = chatTitle;
+    //   saveChats();
+    //   mainWindow.webContents.send('chat-title-updated', { chatId, title: chatTitle });
+    // }
 
     chat.messages.push({ 
       text: processedText, 
